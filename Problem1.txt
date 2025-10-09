@@ -1,0 +1,16 @@
+Modified Four Tank System – Control System Components
+
+States (x):
+- m₁, m₂, m₃, m₄ — masses of fluid in Tanks 1 through 4
+
+Measurements (y):
+- h₁, h₂ — measured fluid heights in Tank 1 and Tank 2 (since hᵢ = mᵢ / (ρ Aᵢ))
+
+Manipulated Variables (MVs, u):
+- F₁, F₂ — flow rates controlled by pumps into Tank 1 and Tank 2
+
+Disturbance Variables (DVs):
+- F₃, F₄ — unmeasured stochastic inflows into Tank 3 and Tank 4
+
+Controlled Variables (CVs):
+- z₁, z₂ — desired fluid heights in Tank 1 and Tank 2
