@@ -97,8 +97,13 @@ figure(1);
 subplot(2,1,1);
 hold on;
 plot(t, z_det(1,:), 'b-', 'LineWidth', 1.5);
-plot(t, z_stoch(1,:), 'r--', 'LineWidth', 1);
-plot(t, z_sde(1,:), 'g:', 'LineWidth', 1);
+h_stoch = plot(t, z_stoch(1,:), 'r--', 'LineWidth', 1);
+h_sde = plot(t, z_sde(1,:), 'g:', 'LineWidth', 1);
+
+alpha = 0.3; 
+set(h_stoch, 'Color', [1 0 0 alpha]);
+set(h_sde, 'Color', [0 1 0 alpha]);
+
 yline(z_obj(1), 'k-', 'LineWidth', 1.5, 'DisplayName', 'Objective h1');
 title('Tank 1 Height Response: $h_1$', 'Interpreter', 'latex');
 xlabel('Time (s)');
@@ -110,8 +115,13 @@ hold off;
 subplot(2,1,2);
 hold on;
 plot(t, z_det(2,:), 'b-', 'LineWidth', 1.5);
-plot(t, z_stoch(2,:), 'r--', 'LineWidth', 1);
-plot(t, z_sde(2,:), 'g:', 'LineWidth', 1);
+h_stoch = plot(t, z_stoch(2,:), 'r--', 'LineWidth', 1);
+h_sde = plot(t, z_sde(2,:), 'g:', 'LineWidth', 1);
+
+alpha = 0.3; 
+set(h_stoch, 'Color', [1 0 0 alpha]);
+set(h_sde, 'Color', [0 1 0 alpha]);
+
 yline(z_obj(2), 'k-', 'LineWidth', 1.5, 'DisplayName', 'Objective h2');
 title('Tank 2 Height Response: $h_2$', 'Interpreter', 'latex');
 xlabel('Time (s)');
@@ -197,8 +207,7 @@ end
 function h = stoch_nonlinear_g(X,p,R)
     %   For this application, R should be a vector 1x4, representing a
     %   diagonal matrix.
-    v = rand(length(R));
-    v = R*v;
+    v = [normrnd(0, R(1));normrnd(0, R(2));normrnd(0, R(3));normrnd(0, R(4))];
 
     % Height h_i = m_i / (rho * A_i)
     h = [0;0;0;0];
