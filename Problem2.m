@@ -23,7 +23,7 @@ gamma = [gamma1; gamma2];
 % Simulation scenario
 
 t0 = 0.0;                       % [s] Initial time
-t_final = 20*60;                % [s] Final time
+t_final = 10*60;                % [s] Final time
 m10 = 0.0;                      % [g] Liquid mass in tank 1 at time t0
 m20 = 0.0;                      % [g] Liquid mass in tank 2 at time t0
 m30 = 0.0;                      % [g] Liquid mass in tank 3 at time t0
@@ -38,10 +38,10 @@ u = [F1; F2];                   % Initially set to 0
 
 %%  2.4 - Simulation
 
-t = 0:0.001:4.999;
 dt = 0.001;
+t = t0:dt:t_final;
 N = length(t);
-norm_d = 20;
+norm_d = 15;
 
 X_det = zeros(4,N);
 X_stoch = zeros(4,N);
@@ -53,24 +53,30 @@ z_det = zeros(2,N);
 z_stoch = zeros(2,N);
 z_sde = zeros(2,N);
 
-sigma_diag = [0.1,0.2,0.1,0.1];
 Rd = [0.2 0.1 0.1 0.2];
 
-%   Objective height values
+%   Scalar wiener noise generation and iteration index
+[~,~,dw] = ScalarStdWienerProcess(t(end),N,2,5);
+dw_it = 1;
+
+d_diff = [0.0; 0.0];
+d_mean = [15.0;15.0];       %   Set to the max value of d
+
+%   Objective height values (cm)
 z_obj = [1;1];
 
 for k=1:N
     %   Obtain piecewise constant u updated by z values
     u_all(:,k) = input_flow_u(k);
 
-    %   d noise generation: F3, F4 (normalized to up to 50 cm3/s)
+    %   d noise generation: F3, F4 (normalized to up to 20 cm3/s)
     d = rand(2)*norm_d;
     d = d(1,:);
 
     % Calculate Derivative (using the deterministic f)
     dX_det = det_nonlinear_f(X_det(:, k), u_all(:,k), p);
     dX_stoch = stoch_nonlinear_f(X_stoch(:, k), u_all(:,k), d, p);
-    dX_sde = sde_nonlinear_f(X_sde(:, k), u_all(:,k), d, p,sigma_diag);
+    [dX_sde,d_diff,dw_it] = sde_nonlinear_f(X_sde(:, k),u_all(:,k),d,p,d_diff,d_mean,dt,dw,dw_it);
 
     % Forward Euler Step: X(k+1) = X(k) + dX/dt * dt
     if k < N
@@ -132,7 +138,7 @@ function u = input_flow_u(t_curr)
     elseif t_curr < 2000
         u = [500.0; 500.0];
     else
-        u = [0.0; 0.0];
+        u = [60.0; 60.0];
     end
 end
 
@@ -212,14 +218,43 @@ end
 
 %%  2.3 - Stochastic Nonlinear Model SDE
 
-%   The sigma noise is given as a diagonal matrix/format
-function dX = sde_nonlinear_f(X,u,d,p,sigma_diag)
-    dX = stoch_nonlinear_f(X,u,d,p);
 
-    dX(1) = dX(1) + sigma_diag(1);
-    dX(2) = dX(2) + sigma_diag(2);
-    dX(3) = dX(3) + sigma_diag(3);
-    dX(4) = dX(4) + sigma_diag(4);
+function [W,Tw,dW] = ScalarStdWienerProcess(T,N,Ns,seed)
+    % ScalarStdWienerProcess Ns realizations of a scalar std Wiener process
+    %
+    % Syntax: [W,Tw,dW] = ScalarStdWienerProcess(T,N,Ns,seed)
+    % W : Standard Wiener process in [0,T]
+    % Tw : Time points
+    % dW : White noise used to generate the Wiener process
+    %
+    % T : Final time
+    % N : Number of intervals
+    % Ns : Number of realizations
+    % seed : To set the random number generator (optional)
+    if nargin == 4
+        rng(seed);
+    end
+
+    dt = T/N;
+    dW = sqrt(dt)*randn(Ns,N);
+    W = [zeros(Ns,1) cumsum(dW,2)];
+    Tw = 0:dt:T;
+end
+
+
+%   Derivation for the stochastic added variables F3 and F4
+function [d_diff,dw_it] = stoch_update_sigma(d,d_mean,dt,dw,dw_it)
+    tau_v = [0.2; 0.1];
+    sigma_d = [0.1; 0.1];
+
+    d_diff = tau_v.*(d_mean - d)*dt + sigma_d.*(dw(:,dw_it));
+    dw_it = dw_it + 1;
+end
+
+%   The sigma noise is given as a diagonal matrix/format
+function [dX,d_diff,dw_it] = sde_nonlinear_f(X,u,d,p,d_diff,d_mean,dt,dw,dw_it)
+    dX = stoch_nonlinear_f(X,u,d_diff,p);
+    [d_diff,dw_it] = stoch_update_sigma(d,d_mean,dt,dw,dw_it);
 end
 
 function h = sde_nonlinear_g(X,p,R)
