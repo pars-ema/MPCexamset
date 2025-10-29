@@ -38,11 +38,6 @@ u = [F1; F2];                   % Initially set to 0
 
 %%  2.4 - Simulation
 
-t = 0:0.01:4.99;
-dt = 0.01;
-N = length(t);
-norm_d = 50;
-
 X_det = zeros(4,N);
 X_stoch = zeros(4,N);
 X_sde = zeros(4,N);
@@ -54,18 +49,16 @@ z_det = zeros(2,N);
 z_stoch = zeros(2,N);
 z_sde = zeros(2,N);
 
-sigma_diag = [0.1,0.2,0.1,0.1];
-Rd = [0.2 0.1 0.1 0.2];
-
 %   Objective height values
 z_obj = [50;50];
+d_diff_ = [0;0];
 
 for k=1:N
     %   Obtain piecewise constant u updated by z values
     if k == 1
         error = [0;0];
         
-        %u_all(:,k) = P_controller(error);
+        u_all(:,k) = P_controller(error);
         %u_all(:,k) = PI_controller(error,[0;0]);
 
         %u_all(:,k) = PID_controller(error,[0;0],[0;0]);
@@ -74,7 +67,7 @@ for k=1:N
         %   The deterministic result was chosen for error computation
         error = z_obj - z_det(:,k-1);
         
-        %u_all(:,k) = P_controller(error);
+        u_all(:,k) = P_controller(error);
         %u_all(:,k) = PI_controller(error,u_all(:,k-1));
 
         %u_all(:,k) = PID_controller(error,u_all(:,k-1),du_all(:,k-1));
@@ -88,7 +81,9 @@ for k=1:N
     % Calculate Derivative (using the deterministic f)
     dX_det = det_nonlinear_f(X_det(:, k), u_all(:,k), p);
     dX_stoch = stoch_nonlinear_f(X_stoch(:, k), u_all(:,k), d, p);
-    dX_sde = sde_nonlinear_f(X_sde(:, k), u_all(:,k), d, p,sigma_diag);
+    [dX_sde,d_diff,dw_it] = sde_nonlinear_f(X_sde(:, k), u_all(:,k), p, d_diff_, d_mean,dt,dw,dw_it);
+
+    d_diff_ = d_diff;
 
     % Forward Euler Step: X(k+1) = X(k) + dX/dt * dt
     if k < N
@@ -157,99 +152,4 @@ end
 function u = PID_controller(error,prev_u,du)
     u = 0.01 .* [prev_u(1) 0; 0 prev_u(2)] * error + 5000 .* error + ...
         0.03 .* [du(1) 0; 0 du(2)] * error;
-end
-
-
-%%  2.1 - Deterministic Nonlinear Model development
-
-%   Prediction function f(X,u,p)
-%   x = [m1; m2; m3; m4] (masses in g)
-%   u = [F1; F2] (pump flow rates in cm3/s)
-function dX = det_nonlinear_f(X,u,p)
-    dX = [0;0;0;0];
-    dX(1) =  p(12)*(p(9)*u(1)) + p(12)*p(3)*sqrt(2*p(11)*(X(3)/(p(12)*p(7)))) ...
-            - p(12)*p(1)*sqrt(2*p(11)*(X(1)/(p(12)*p(5))));
-    dX(2) =  p(12)*(p(10)*u(2)) + p(12)*p(4)*sqrt(2*p(11)*(X(4)/(p(12)*p(8)))) ...
-            - p(12)*p(2)*sqrt(2*p(11)*(X(2)/(p(12)*p(6))));
-    dX(3) =  p(12)*((1-p(10))*u(2)) - p(12)*p(3)*sqrt(2*p(11)*(X(3)/(p(12)*p(7))));
-    dX(4) =  p(12)*((1-p(9))*u(1)) - p(12)*p(4)*sqrt(2*p(11)*(X(4)/(p(12)*p(8))));
-end
-
-%   Measurement function g(X,p)
-function h = det_nonlinear_g(X,p)
-    % Height h_i = m_i / (rho * A_i)
-    h = [0;0;0;0];
-    h(1) = X(1) / (p(12) * p(5));
-    h(2) = X(2) / (p(12) * p(6));
-    h(3) = X(3) / (p(12) * p(7));
-    h(4) = X(4) / (p(12) * p(8));
-    
-end
-
-%   The heights (h_x) are the outputs
-function z = det_nonlinear_h(X,p)
-    z = det_nonlinear_g(X,p);
-    z = z(1:2);
-end
-
-
-
-%%  2.2 - Stochastic Nonlinear Model development
-
-%   (F3,F4) are now defined and included in the scope of this exercise.
-%   Those should be defined stochastic but piecewise constant
-
-%   d = [F3; F4] (stochastic flow disturbances in cm3/s)
-function dX = stoch_nonlinear_f(X,u,d,p)
-    dX = det_nonlinear_f(X,u,p);
-    
-    dX(3) = dX(3) + d(1);
-    dX(4) = dX(4) + d(2);
-end
-
-
-%   2. Measurement function g(x,p)
-%   The measurements are the liquid heights (h_i) in cm.
-%   y(t) = g(x(t),p) + v(t)
-function h = stoch_nonlinear_g(X,p,R)
-    %   For this application, R should be a vector 1x4, representing a
-    %   diagonal matrix.
-    v = rand(length(R));
-    v = R*v;
-
-    % Height h_i = m_i / (rho * A_i)
-    h = [0;0;0;0];
-    h(1) = (X(1) / (p(12) * p(5))) + v(1);
-    h(2) = (X(2) / (p(12) * p(6))) + v(2);
-    h(3) = (X(3) / (p(12) * p(7))) + v(3);
-    h(4) = (X(4) / (p(12) * p(8))) + v(4);
-    
-end
-
-function z = stoch_nonlinear_h(X,p,R)
-    z = stoch_nonlinear_g(X,p,R);
-    z = z(1:2);
-end
-
-
-
-%%  2.3 - Stochastic Nonlinear Model SDE
-
-%   The sigma noise is given as a diagonal matrix/format
-function dX = sde_nonlinear_f(X,u,d,p,sigma_diag)
-    dX = stoch_nonlinear_f(X,u,d,p);
-
-    dX(1) = dX(1) + sigma_diag(1);
-    dX(2) = dX(2) + sigma_diag(2);
-    dX(3) = dX(3) + sigma_diag(3);
-    dX(4) = dX(4) + sigma_diag(4);
-end
-
-function h = sde_nonlinear_g(X,p,R)
-    h = stoch_nonlinear_g(X,p,R);
-end
-
-function z = sde_nonlinear_h(X,p,R)
-    z = sde_nonlinear_g(X,p,R);
-    z = z(1:2);
 end
