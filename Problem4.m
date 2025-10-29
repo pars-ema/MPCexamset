@@ -2,7 +2,7 @@
 run('tank_module.m')
 
 % --- Steady-State Calculation ---
-F_ss = 50;
+F_ss = 20;
 u_ss = [F_ss; F_ss];
 
 % Calculate steady-state heights (h_ss = [h1; h2; h3; h4])
@@ -433,32 +433,38 @@ Requirements of a Step Experiment:
 
 
 %% 6. Compute the corresponding impulse response coefficients (Markov Parameters)
-% Sampling time is chosen as dt = 1s.
 
-time_constraints = [tau11 tau12 tau21 tau22 theta11 theta12 theta21 theta22 dt N]
-
-K_s = [K11_calc K12_calc K21_calc K22_calc]
+k_start = k_step; 
+k_end = N;
+N_M = k_end - k_start + 1; % Length of the Markov Parameter sequence
 
 % Use the deterministic, 10% step normalized response (Z_norm_id) for M_k.
-M = zeros(ny, N, nu); % M(output_i, time, input_j)
+% M now stores only the sequence AFTER the step (M[output_i, time, input_j])
+M = zeros(ny, N_M, nu); 
+M_t = t(k_start:k_end);
 
-% Compute the difference (discrete-time derivative)
 for i = 1:nu
     for l = 1:ny
-        M(l, 2:N, i) = diff(Z_norm_id(l, :, i)) / dt;
+        % Get the normalized response *only after the step*
+        Response_segment = Z_norm_id(l, k_start:k_end, i);
+        M(l, 1:N_M-1, i) = diff(Response_segment) / dt;
     end
 end
 
-% Plotting the Markov Parameters
-figure(6);
-sgtitle('6. Impulse Response Coefficients (Markov Parameters)');
+figure();
+sgtitle('Impulse Response Coefficients (Markov Parameters)');
+
+% The time vector must be shifted to start at 0
+t_shift = (M_t(2:N_M) - M_t(1))/60; % Time in minutes, relative to the step
+
 for i = 1:nu
     for l = 1:ny
         subplot(nu, ny, (i-1)*ny + l);
         hold on;
-
-        % Plot starts from k=1 (i.e., time=dt)
-        stem(t(2:N)/60, M(l, 2:N, i), 'filled', 'DisplayName', 'Markov Parameters'); 
+        
+        % Plot starts from t=dt (i.e., the first change after the impulse)
+        plot(t_shift, M(l, 1:N_M-1, i), 'DisplayName', 'Markov Parameters');
+        
         title(sprintf('$M_{%d,%d} (\\Delta h_{%d} / \\Delta F_{%d})$', l, i, l, i), 'Interpreter', 'latex');
         xlabel('Time (min)');
         ylabel('Coefficient Value');

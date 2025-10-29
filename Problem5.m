@@ -180,7 +180,140 @@ disp('Time constants:');
 disp(tau);
 
 
-%%  Problem 5.3: 
+%%  Problem 5.3: Compare the gains and time constants to the gains and 
+%   time constants obtained from the step response experiments in Problem 4.
+
+%{
+The tau constants are a little smaller than in the nonlinear approach given
+from problem 4. But not so further away. And surprisingly, the K gains re-
+sult quite similar.
+%}
+
+
+%%  Problem 5.4: Compute discrete-time state space models using a sampling
+%   time of your choice (in this case, T_s = dt)
+
+%   Obtain discrete matrices for ZOH inputs
+sys_d = c2d(sys_ss,dt,'zoh');
+
+%   Extract matrices
+A_d = sys_d.A;
+B_d = sys_d.B;
+C_d = sys_d.C;
+D_d = sys_d.D;
+
+% Initialize state and output vectors for the discrete model
+X_d = zeros(4, N);
+z_d = zeros(2, N);
+
+%   Discrete-Time Simulation using A_d, B_d
+for k = 1:N
+    %   Get delta_u
+    delta_u = u_all(:, k) - u_ss;
+
+    delta_z = C_d * (X_d(:, k) - X_ss) + D_d * delta_u;
+    z_d(:, k) = delta_z + z_ss;
+
+    %   Calculate next state (X[k+1]) from the current state (X[k])
+    if k < N
+        % X[k+1] - X_ss = A_d * (X[k] - X_ss) + B_d * U[k]
+        X_d(:, k+1) = X_ss + A_d * (X_d(:, k) - X_ss) + B_d * delta_u;
+    end
+end
+
+%   Plotting results
+figure();
+subplot(2,1,1);
+hold on;
+plot(t, z_d(1,:), 'b-', 'LineWidth', 1.5);
+
+title('Tank 1 Height Response (discrete): $h_1$', 'Interpreter', 'latex');
+xlabel('Time (s)');
+ylabel('Height (cm)');
+legend('Linear (discrete)', 'Location', 'best');
+grid on;
+hold off;
+
+subplot(2,1,2);
+hold on;
+plot(t, z_d(2,:), 'b-', 'LineWidth', 1.5);
+
+title('Tank 2 Height Response (discrete): $h_2$', 'Interpreter', 'latex');
+xlabel('Time (s)');
+ylabel('Height (cm)');
+legend('Linear (discrete)', 'Location', 'best');
+grid on;
+hold off;
+
+
+%%  Problem 5.5: Calculate the Markov Parameters
+
+H = zeros(size(C_d,1),size(B_d,2),N);
+factor = eye(size(A_d));
+
+for k = 1:N
+    if k == 1
+        H(:,:,k) = D_d;
+    else
+        H(:,:,k) = C_d * factor * B_d;
+        factor = factor * A_d;
+    end
+end
+
+
+%   Plotting results
+figure();
+subplot(2,2,1);
+hold on;
+plot(t, squeeze(H(1,1,:)), 'LineWidth', 1.5);
+
+title('Markov Parameter $H_1$', 'Interpreter', 'latex');
+xlabel('Time (s)');
+ylabel('Magnitude ($s/cm^2$)','Interpreter', 'latex');
+grid on;
+hold off;
+
+subplot(2,2,2);
+hold on;
+plot(t, squeeze(H(1,2,:)), 'LineWidth', 1.5);
+
+title('Markov Parameter $H_2$', 'Interpreter', 'latex');
+xlabel('Time (s)');
+ylabel('Magnitude ($s/cm^2$)','Interpreter', 'latex');
+grid on;
+hold off;
+
+subplot(2,2,3);
+hold on;
+plot(t, squeeze(H(2,1,:)), 'LineWidth', 1.5);
+
+title('Markov Parameter $H_3$', 'Interpreter', 'latex');
+xlabel('Time (s)');
+ylabel('Magnitude ($s/cm^2$)','Interpreter', 'latex');
+grid on;
+hold off;
+
+subplot(2,2,4);
+hold on;
+plot(t, squeeze(H(2,2,:)), 'LineWidth', 1.5);
+
+title('Markov Parameter $H_4$', 'Interpreter', 'latex');
+xlabel('Time (s)');
+ylabel('Magnitude ($s/cm^2$)','Interpreter', 'latex');
+grid on;
+hold off;
+
+
+%%  Discuss and comment on the linearization approach for obtaining
+%   discrete-time linear state space models.
+
+%{
+A pretty straightforward approach which brings simplicity for the system
+and for the controlling process, along with pretty acceptable results if
+an much more absolute precision is not required. 
+
+
+%}
 
 
 %%  Input flow u function, and plot function
