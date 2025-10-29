@@ -1,4 +1,3 @@
-
 %   Add path to constants and functions' definitions
 run('tank_module.m')
 
