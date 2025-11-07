@@ -31,15 +31,11 @@ function [fig, ax] = plot_transfer_identification(t, y_norm_F1, y_norm_F2)
     % === G11: h1 ← F1 ===
     ax(1,1) = subplot(2,2,1); hold on; grid on;
     plot(t, y_norm_F1(1,:), 'Color', colors(1,:), 'LineWidth', 1.8);
-    xline(198, 'r--');
-    text(198, 0.5, '$T_1$', 'Interpreter','latex', ...
-         'Rotation',90, 'VerticalAlignment','bottom', 'HorizontalAlignment','right', Color='red');
-    yline(0.632*0.301, 'r--', Label='$0.632*K_1$', Interpreter='latex')
     xlabel('Time [s]');
     ylabel('Normalized Response [(cm)/(cm$^3$/s)]', 'Interpreter','latex');
     title('$G_{11}$ : $h_1 \leftarrow F_1$', 'Interpreter','latex', 'FontWeight','bold');
     xlim([t(1), t(end)]);
-    ylim([0, 0.5])
+    ylim([-0.2, 0.6])
 
     % === G12: h1 ← F2 ===
     ax(1,2) = subplot(2,2,2); hold on; grid on;
@@ -48,7 +44,7 @@ function [fig, ax] = plot_transfer_identification(t, y_norm_F1, y_norm_F2)
     ylabel('Normalized Response [(cm)/(cm$^3$/s)]', 'Interpreter','latex');
     title('$G_{12}$ : $h_1 \leftarrow F_2$', 'Interpreter','latex', 'FontWeight','bold');
     xlim([t(1), t(end)]);
-    ylim([0, 0.5])
+    ylim([-0.2, 0.6])
 
     % === G21: h2 ← F1 ===
     ax(2,1) = subplot(2,2,3); hold on; grid on;
@@ -57,20 +53,16 @@ function [fig, ax] = plot_transfer_identification(t, y_norm_F1, y_norm_F2)
     ylabel('Normalized Response [(cm)/(cm$^3$/s)]', 'Interpreter','latex');
     title('$G_{21}$ : $h_2 \leftarrow F_1$', 'Interpreter','latex', 'FontWeight','bold');
     xlim([t(1), t(end)]);
-    ylim([0, 0.5])
+    ylim([-0.2, 0.6])
 
     % === G22: h2 ← F2 ===
     ax(2,2) = subplot(2,2,4); hold on; grid on;
     plot(t, y_norm_F2(2,:), 'Color', colors(4,:), 'LineWidth', 1.8);
-    xline(220, 'r--');
-    text(220, 0.5, '$T_2$', 'Interpreter','latex', ...
-         'Rotation',90, 'VerticalAlignment','bottom', 'HorizontalAlignment','right', Color='red');
-    yline(0.632*0.415, 'r--', Label='$0.632*K_{22}$', Interpreter='latex')
     xlabel('Time [s]');
     ylabel('Normalized Response [(cm)/(cm$^3$/s)]', 'Interpreter','latex');
     title('$G_{22}$ : $h_2 \leftarrow F_2$', 'Interpreter','latex', 'FontWeight','bold');
     xlim([t(1), t(end)]);
-    ylim([0, 0.5])
+    ylim([-0.2, 0.6])
 
     % --- Style adjustments ---
     set(findall(fig,'-property','FontSize'),'FontSize',12);

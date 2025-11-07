@@ -3,7 +3,7 @@ function y = FourTankSystemOutput(x_k,p)
 %   Detailed explanation goes here
 
 A = p(5:8,1)';
-rho = p(12)
+rho = p(12);
 y = x_k./(rho*A);
 y = y(1:2);
 

@@ -27,30 +27,36 @@ function [fig, ax] = plot_step_responses(t, y_10, y_25, y_50, p, stepSource)
     % --- Create figure ---
     fig = figure('Name', sprintf('Step Responses for %s', stepSource));
     sgtitle(sprintf('Tank Responses to Step Changes in %s', stepSource), ...
-            'Interpreter','latex', 'FontSize',14, 'FontWeight','bold');
+            'Interpreter','latex', 'FontSize',16, 'FontWeight','bold');
 
     ax = gobjects(1,4);
-    colors = lines(3); % for consistent coloring
+    colors = lines(3); % consistent coloring
 
     for i = 1:4
         ax(i) = subplot(2,2,order(i)); hold on; grid on;
 
         % Plot step responses
-        plot(t, y_10(i,:), 'Color', colors(1,:), 'LineWidth', 1.5, ...
+        plot(t, y_10(i,:), 'Color', colors(1,:), 'LineWidth', 2.0, ...
              'DisplayName', '10\% Step');
-        plot(t, y_25(i,:), 'Color', colors(2,:), 'LineWidth', 1.5, ...
+        plot(t, y_25(i,:), 'Color', colors(2,:), 'LineWidth', 2.0, ...
              'DisplayName', '25\% Step');
-        plot(t, y_50(i,:), 'Color', colors(3,:), 'LineWidth', 1.5, ...
+        plot(t, y_50(i,:), 'Color', colors(3,:), 'LineWidth', 2.0, ...
              'DisplayName', '50\% Step');
 
-        xlabel('Time [s]');
-        ylabel(sprintf('$h_{%d}$ [cm]', i), 'Interpreter', 'latex');
-        title(sprintf('Tank %d', i), 'FontWeight','bold');
-        legend('Location', 'best', 'Interpreter','latex');
+        xlabel('Time [s]', 'FontSize', 14, 'FontWeight','bold');
+        ylabel(sprintf('$h_{%d}$ [cm]', i), ...
+               'Interpreter', 'latex', 'FontSize', 14, 'FontWeight','bold');
+        title(sprintf('Tank %d', i), 'FontSize', 14, 'FontWeight','bold');
+        legend('Location', 'best', 'Interpreter','latex', ...
+               'FontSize', 12, 'Box','off');
         xlim([t(1), t(end)]);
         ylim([0.9*h_min 1.1*h_max]);
+
+        % Increase tick label size
+        ax(i).FontSize = 12;
+        ax(i).LineWidth = 1.2;
     end
 
-    % Adjust layout
-    set(gcf, 'Position', [100 100 900 700]);
+    % Adjust layout and overall size
+    set(fig, 'Position', [100 100 950 750]);
 end

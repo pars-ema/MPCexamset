@@ -40,6 +40,7 @@ t0 = 0;
 tf = 60*60;
 Ts = 1;
 t  = t0:Ts:tf;
+sigma_measurement = [5;5;5;5];
 
 
 %% problem 2.1 Determinitic nonlinear model with constant input u
@@ -58,7 +59,7 @@ simulate_stochastic(t, x0, u, p, outputFolder);
 %sde simulation
 outputFolder = fullfile('figures', 'problem_2', 'sde'); 
 if ~exist(outputFolder, 'dir'); mkdir(outputFolder); end
-simulate_sde(t, x0, u, d, p, outputFolder);
+simulate_sde(t, x0, u, d, p, sigma_measurement, true, outputFolder);
 
 
 %% Problem 2.4 simulation with random step inputs
@@ -84,6 +85,6 @@ simulate_stochastic(t, x0, u, p, outputFolder);
 %sde simulation
 outputFolder = fullfile('figures', 'problem_2', 'simulation', 'sde'); 
 if ~exist(outputFolder, 'dir'); mkdir(outputFolder); end
-simulate_sde(t, x0, u, d, p, outputFolder);
+simulate_sde(t, x0, u, d, p, sigma_measurement, true, outputFolder);
 
 

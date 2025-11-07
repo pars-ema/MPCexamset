@@ -1,4 +1,4 @@
-function [t, y] = simulate_deterministic(t, x0, u, d, p, plot, outputFolder)
+function [t, y] = simulate_deterministic(t, x0, u, d, p, show_plot, outputFolder)
 % SIMULATE_DETERMINISTIC
 % Simulate deterministic nonlinear model using a fixed-step Euler integrator.
 % Also plots u (inputs) and d (disturbances) in one figure, stacked vertically.
@@ -13,7 +13,7 @@ function [t, y] = simulate_deterministic(t, x0, u, d, p, plot, outputFolder)
 % -------------------------------------------------------------
 
     % --- Output folder ---
-    if plot
+    if show_plot
     if nargin < 6 || isempty(outputFolder)
         outputFolder = fullfile('figures', 'deterministic');
     end
@@ -46,8 +46,8 @@ function [t, y] = simulate_deterministic(t, x0, u, d, p, plot, outputFolder)
     % --- Convert for plotting ---
     X = x;
     T = t;
-    y = FourTankSystemSensor(x, p)
-    if plot
+    y = FourTankSystemSensor(x, p);
+    if show_plot
         % ------------------------------------------------------------
         % Plot results
         % ------------------------------------------------------------

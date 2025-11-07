@@ -140,8 +140,80 @@ outputFolder = fullfile('figures', 'problem_4', 'normalized_tf','deterministic')
 if ~exist(outputFolder, 'dir'); mkdir(outputFolder); end
 exportgraphics(fig_tf, fullfile(outputFolder, 'normalized_tf.pdf'), 'ContentType', 'vector');
 
-% % 
-%%
+% --- Add annotations AFTER figure creation ---
+% Access the desired axes (for example, G11 in position (1,1))
+axes(ax_tf(1,1));  % or use 'nexttile' if using tiledlayout
+% Add lines and text
+xline(198, 'r--', 'LineWidth', 1.2);
+text(198, 0.5, '$T_1$', 'Interpreter','latex', ...
+     'Rotation',90, 'VerticalAlignment','bottom', ...
+     'HorizontalAlignment','right', 'Color','red');
+
+yline(0.632*0.301, 'r--', 'LineWidth', 1.2);
+text(200, 0.632*0.301, '$0.632K_1$', 'Interpreter','latex', ...
+     'VerticalAlignment','bottom', 'Color','red');
+
+axes(ax_tf(2,2));  % G22 plot
+xline(220, 'r--', 'LineWidth', 1.2);
+text(220, 0.5, '$T_2$', 'Interpreter','latex', ...
+     'Rotation',90, 'VerticalAlignment','bottom', ...
+     'HorizontalAlignment','right', 'Color','red');
+yline(0.632*0.415, 'r--', 'LineWidth', 1.2);
+text(225, 0.632*0.415, '$0.632K_{22}$', 'Interpreter','latex', ...
+     'VerticalAlignment','bottom', 'Color','red');
+exportgraphics(fig_tf, fullfile(outputFolder, 'normalized_tf_with_identification.pdf'), 'ContentType', 'vector');
+
+
+
+
+%% Normalized step responses for determinitic model with 10% step
+% y_10_F1, y_25_F1, y_50_F1  → 4×N matrices
+% hs → steady-state heights [4x1]
+% F1, F2, u_s already defined
+
+% Define input steps
+du_10_F1 = (F1*1.1 - F1);    % step magnitude in cm³/s
+du_25_F1 = (F1*1.25 - F1);
+du_50_F1 = (F1*1.5 - F1);
+
+% Normalize outputs
+y_norm_10_F1 = (y_10_F1 - hs) / du_10_F1;
+y_norm_25_F1 = (y_25_F1 - hs) / du_25_F1;
+y_norm_50_F1 = (y_50_F1 - hs) / du_50_F1;
+
+% Plot normalized step responses
+[fig_norm_F1, ax_norm_F1] = plot_step_responses(t, y_norm_10_F1, y_norm_25_F1, y_norm_50_F1, p, 'F_1');
+sgtitle('Normalized Step Responses to F_1 Steps', 'FontSize', 14);
+outputFolder = fullfile('figures', 'problem_4', 'normalized_steps','sde'); 
+if ~exist(outputFolder, 'dir'); mkdir(outputFolder); end
+exportgraphics(fig_norm_F1, fullfile(outputFolder, 'normalized_steps_F1.pdf'), 'ContentType', 'vector');
+
+%Normalized steps for F2
+du_10_F2 = (F2*1.1 - F2);
+du_25_F2 = (F2*1.25 - F2);
+du_50_F2 = (F2*1.5 - F2);
+
+y_norm_10_F2 = (y_10_F2 - hs) / du_10_F2;
+y_norm_25_F2 = (y_25_F2 - hs) / du_25_F2;
+y_norm_50_F2 = (y_50_F2 - hs) / du_50_F2;
+
+[fig_norm_F2, ax_norm_F2] = plot_step_responses(t, y_norm_10_F2, y_norm_25_F2, y_norm_50_F2, p, 'F_2');
+sgtitle('Normalized Step Responses to F_2 Steps', 'FontSize', 14);
+exportgraphics(fig_norm_F2, fullfile(outputFolder, 'normalized_steps_F2.pdf'), 'ContentType', 'vector');
+
+du_10_F1 = F1*1.1 - F1;
+y_norm_F1 = (y_10_F1 - hs) / du_10_F1;
+
+du_10_F2 = F2*1.1 - F2;
+y_norm_F2 = (y_10_F2 - hs) / du_10_F2;
+
+[fig_tf, ax_tf] = plot_transfer_identification(t, y_norm_F1, y_norm_F2);
+outputFolder = fullfile('figures', 'problem_4', 'normalized_tf','sde'); 
+if ~exist(outputFolder, 'dir'); mkdir(outputFolder); end
+exportgraphics(fig_tf, fullfile(outputFolder, 'normalized_tf.pdf'), 'ContentType', 'vector');
+
+
+%% 4.3 Identifying transfer function parameters
 disp('=== IDENTIFYING TRANSFER FUNCTIONS WITH TFEST ===');
 
 Ts = 1; % [s] sampling time
@@ -181,7 +253,6 @@ subplot(2,2,3); compare(data_G21, G21_est); title('G_{21}: h_2 \leftarrow F_1');
 subplot(2,2,4); compare(data_G22, G22_est); title('G_{22}: h_2 \leftarrow F_2');
 sgtitle('Transfer Function Identification using TFEST');
 
-%%
 fprintf('\n--- Extracted Parameters from TFEST ---\n');
 
 % Helper function to extract parameters from any tf
@@ -197,6 +268,157 @@ fprintf('G22(s): K = %.4e, tau = %.2f s\n', K22_est, tau22);
 fprintf('G12(s): K = %.4e, taus = [%.2f, %.2f] s\n', K12_est, sort(tau12));
 fprintf('G21(s): K = %.4e, taus = [%.2f, %.2f] s\n', K21_est, sort(tau21));
 
+%% 4.2 step responses with process and measurement noise
+% --- Define measurement noise levels ---
+sigma_values = {[1;1;1;1], [2;2;2;2], [5;5;5;5]};
+sigma_labels = {'sigma1','sigma2','sigma5'};  % folder suffixes
+
+% --- Loop through each sigma_measurement configuration ---
+for k = 1:length(sigma_values)
+
+    sigma_measurement = sigma_values{k};
+    label = sigma_labels{k};
+
+    fprintf('\n=== Running SDE step responses for %s ===\n', label);
+
+    %% === Step in F1 ===
+    outputFolder = false;
+
+    u = [F1*1.1; F2];
+    [t, ~, y_10_F1] = simulate_sde(t, xs, u, d, p, sigma_measurement, false, outputFolder);
+
+    u = [F1*1.25; F2];
+    [t, ~, y_25_F1] = simulate_sde(t, xs, u, d, p, sigma_measurement, false, outputFolder);
+
+    u = [F1*1.5; F2];
+    [t, ~, y_50_F1] = simulate_sde(t, xs, u, d, p, sigma_measurement, false, outputFolder);
+
+    % Plot results for F1 steps
+    [fig_F1, ax_F1] = plot_step_responses(t, y_10_F1, y_25_F1, y_50_F1, p, sprintf('$F_1, (\\sigma_m^2 = %d)$', sigma_measurement(1)));
+
+    % Save figure
+    outputFolder = fullfile('figures', 'problem_4', 'steps_F1', ['sde_' label]);
+    if ~exist(outputFolder, 'dir'), mkdir(outputFolder); end
+    exportgraphics(fig_F1, fullfile(outputFolder, 'Steps_F1.pdf'), 'ContentType', 'vector');
+
+    %% === Step in F2 ===
+    outputFolder = false;
+
+    u = [F1; F2*1.1];
+    [t, ~, y_10_F2] = simulate_sde(t, xs, u, d, p, sigma_measurement, false, outputFolder);
+
+    u = [F1; F2*1.25];
+    [t, ~, y_25_F2] = simulate_sde(t, xs, u, d, p, sigma_measurement, false, outputFolder);
+
+    u = [F1; F2*1.5];
+    [t, ~, y_50_F2] = simulate_sde(t, xs, u, d, p, sigma_measurement, false, outputFolder);
+
+    % Plot results for F2 steps
+    [fig_F2, ax_F2] = plot_step_responses(t, y_10_F2, y_25_F2, y_50_F2, p, sprintf('$F_2, (\\sigma_m^2 = %d)$', sigma_measurement(1)));
+
+    % Save figure
+    outputFolder = fullfile('figures', 'problem_4', 'steps_F2', ['sde_' label]);
+    if ~exist(outputFolder, 'dir'), mkdir(outputFolder); end
+    exportgraphics(fig_F2, fullfile(outputFolder, 'Steps_F2.pdf'), 'ContentType', 'vector');
+
+end
+
+fprintf('\nAll SDE step-response simulations completed successfully!\n');
+
+%% Normalized step responses for stochastic model model with medium sigma
+% y_10_F1, y_25_F1, y_50_F1  → 4×N matrices
+% hs → steady-state heights [4x1]
+% F1, F2, u_s already defined
+
+outputFolder = false;
+sigma_measurement = sigma_values{2}
+u = [F1*1.1; F2];
+[t, ~, y_10_F1] = simulate_sde(t, xs, u, d, p, sigma_measurement, false, outputFolder);
+u = [F1*1.25; F2];
+[t, ~, y_25_F1] = simulate_sde(t, xs, u, d, p, sigma_measurement, false, outputFolder);
+u = [F1*1.5; F2];
+[t, ~, y_50_F1] = simulate_sde(t, xs, u, d, p, sigma_measurement, false, outputFolder);
+
+
+% Define input steps
+du_10_F1 = (F1*1.1 - F1);    % step magnitude in cm³/s
+du_25_F1 = (F1*1.25 - F1);
+du_50_F1 = (F1*1.5 - F1);
+
+% Normalize outputs
+y_norm_10_F1 = (y_10_F1 - hs) / du_10_F1;
+y_norm_25_F1 = (y_25_F1 - hs) / du_25_F1;
+y_norm_50_F1 = (y_50_F1 - hs) / du_50_F1;
+
+% Plot normalized step responses
+[fig_norm_F1, ax_norm_F1] = plot_step_responses(t, y_norm_10_F1, y_norm_25_F1, y_norm_50_F1, p, 'F_1');
+sgtitle('Normalized Step Responses to F_1 Steps', 'FontSize', 14);
+outputFolder = fullfile('figures', 'problem_4', 'normalized_steps','sde'); 
+if ~exist(outputFolder, 'dir'); mkdir(outputFolder); end
+exportgraphics(fig_norm_F1, fullfile(outputFolder, 'normalized_steps_F1.pdf'), 'ContentType', 'vector');
+
+
+
+%Normalized steps for F2
+u = [F1; F2*1.1];
+[t, ~, y_10_F2] = simulate_sde(t, xs, u, d, p, sigma_measurement, false, outputFolder);
+u = [F1; F2*1.25];
+[t, ~, y_25_F2] = simulate_sde(t, xs, u, d, p, sigma_measurement, false, outputFolder);
+u = [F1; F2*1.5];
+[t, ~, y_50_F2] = simulate_sde(t, xs, u, d, p, sigma_measurement, false, outputFolder);
+
+du_10_F2 = (F2*1.1 - F2);
+du_25_F2 = (F2*1.25 - F2);
+du_50_F2 = (F2*1.5 - F2);
+
+y_norm_10_F2 = (y_10_F2 - hs) / du_10_F2;
+y_norm_25_F2 = (y_25_F2 - hs) / du_25_F2;
+y_norm_50_F2 = (y_50_F2 - hs) / du_50_F2;
+
+[fig_norm_F2, ax_norm_F2] = plot_step_responses(t, y_norm_10_F2, y_norm_25_F2, y_norm_50_F2, p, 'F_2');
+sgtitle('Normalized Step Responses to F_2 Steps', 'FontSize', 14);
+exportgraphics(fig_norm_F2, fullfile(outputFolder, 'normalized_steps_F2.pdf'), 'ContentType', 'vector');
+
+%% Now trying system identification. with the noise it is better to do larger step. Showing results for 10% step (very bad) and 50% step
+
+% 50% step
+y_norm_F1 = (y_50_F1 - hs) / du_50_F1;
+y_norm_F2 = (y_50_F2 - hs) / du_50_F2;
+
+[fig_tf, ax_tf] = plot_transfer_identification(t, y_norm_F1, y_norm_F2);
+outputFolder = fullfile('figures', 'problem_4', 'normalized_tf','sde', 'step_50'); 
+if ~exist(outputFolder, 'dir'); mkdir(outputFolder); end
+exportgraphics(fig_tf, fullfile(outputFolder, 'normalized_tf.pdf'), 'ContentType', 'vector');
+
+% 25% step
+y_norm_F1 = (y_25_F1 - hs) / du_25_F1;
+y_norm_F2 = (y_25_F2 - hs) / du_25_F2;
+
+[fig_tf, ax_tf] = plot_transfer_identification(t, y_norm_F1, y_norm_F2);
+outputFolder = fullfile('figures', 'problem_4', 'normalized_tf','sde', 'step_'); 
+if ~exist(outputFolder, 'dir'); mkdir(outputFolder); end
+exportgraphics(fig_tf, fullfile(outputFolder, 'normalized_tf.pdf'), 'ContentType', 'vector');
+
+% 10% step
+y_norm_F1 = (y_10_F1 - hs) / du_10_F1;
+y_norm_F2 = (y_10_F2 - hs) / du_10_F2;
+
+[fig_tf, ax_tf] = plot_transfer_identification(t, y_norm_F1, y_norm_F2);
+outputFolder = fullfile('figures', 'problem_4', 'normalized_tf','sde', 'step_10'); 
+if ~exist(outputFolder, 'dir'); mkdir(outputFolder); end
+exportgraphics(fig_tf, fullfile(outputFolder, 'normalized_tf.pdf'), 'ContentType', 'vector');
+
+
+[fig_tf, ax_tf] = plot_transfer_identification_combined(t, ...
+    (y_10_F1 - hs)/du_10_F1, (y_25_F1 - hs)/du_25_F1, (y_50_F1 - hs)/du_50_F1, ...
+    (y_10_F2 - hs)/du_10_F2, (y_25_F2 - hs)/du_25_F2, (y_50_F2 - hs)/du_50_F2, p);
+
+outputFolder = fullfile('figures', 'problem_4', 'normalized_tf', 'sde', 'combined');
+if ~exist(outputFolder, 'dir'); mkdir(outputFolder); end
+exportgraphics(fig_tf, fullfile(outputFolder, 'normalized_tf_combined.pdf'), 'ContentType', 'vector');
+
+
+%plot all combined. 4 plots in one figre. each has 3 step responses
 
 % ------------------------------------------------------------
 % Supporting residual function
