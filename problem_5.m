@@ -147,9 +147,123 @@ exportgraphics(gcf, fullfile(outputFolder, 'step_response.pdf'), 'ContentType', 
 figure
 sys_u = ss(A,B,C,zeros(2,2)); % From inputs F1,F2 to outputs h1,h2
 Gyu = tf(sys_u); % Transfer functions G_ij(s)
-sys_d = ss(A,E,C,zeros(2,2)); % From disturbances F3,F4 to outputs
-Gyd = tf(sys_d);
+% sys_d = ss(A,E,C,zeros(2,2)); % From disturbances F3,F4 to outputs
+% Gyd = tf(sys_d);
 step(Gyu)
+
+
+
+
+
+
+
+
+%% dicretization with mimoctf2d
+%TO DO
+% ------------------------------------------------------------
+%  Discretization of the linearized 4-tank model with mimoctf2dss
+% ------------------------------------------------------------
+Ts   = 10;        % sampling time [s]
+Nmax = 100;      % maximum state dimension
+tol  = 1e-8;     
+lambda = zeros(2,2); % assume no pure time delay
+
+% Extract numerators / denominators from your continuous model Gyu
+num = cell(2,2);
+den = cell(2,2);
+for i = 1:2
+    for j = 1:2
+        [num{i,j}, den{i,j}] = tfdata(Gyu(i,j),'v');
+    end
+end
+
+% Convert continuous-time MIMO TF to discrete-time state-space
+[Ad,Bd,Cd,Dd,sH] = mimoctf2dss(num,den,lambda,Ts,Nmax,tol);
+
+% Display results
+disp('Discrete-time state-space matrices:');
+Ad, Bd, Cd, Dd
+
+% Save them to a .mat file
+save('discrete_model_from_linearization.mat', 'Ad', 'Bd', 'Cd', 'Dd', 'sH');
+
+
+% Optional: plot Hankel singular values (to inspect order content)
+figure; semilogy(sH,'b.-','LineWidth',2,'MarkerSize',20);
+grid on;
+xlabel('State number'); ylabel('Singular value');
+title('Hankel Singular Values of Discrete 4-Tank Model');
+
+Nimp = 1800/Ts;
+ny = size(Cd,1);
+nu = size(Bd,2);
+
+H_det = zeros(ny, nu, Nimp);
+H_det(:,:,1) = Dd;
+for k = 2:Nimp
+    H_det(:,:,k) = Cd * (Ad^(k-2)) * Bd;
+end
+
+% Save deterministic (exact) Markov parameters
+save('Markov_parameters_problem_5.mat','H_det','Ts');
+disp('✅ Saved deterministic Markov parameters to Markov_parameters_problem_5.mat');
+
+%%comparison with parameters from the previous problem
+%% Compare Markov parameters: Identified vs Deterministic
+load('H_identified_problem_4.mat','H_identified_problem_4','Ts');
+load('Markov_parameters_problem_5.mat','H_det');
+%%
+Nimp = min(size(H_identified_problem_4,3), size(H_det,3));
+k = 0:Nimp-1;
+
+figure('Name','Comparison of Markov Parameters','Position',[100 100 1200 800]);
+titles = {'$H_{11}$','$H_{12}$','$H_{21}$','$H_{22}$'};
+for i = 1:2
+    for j = 1:2
+        subplot(2,2,(i-1)*2+j); hold on; grid on;
+        plot(k, squeeze(H_det(i,j,1:Nimp)), 'bo', 'LineWidth',1.5, 'DisplayName','Deterministic linearized');
+        plot(k, squeeze(H_identified_problem_4(i,j,1:Nimp)), 'rx', 'LineWidth',1.3, 'DisplayName','Identified TF');
+        xlabel('Sample k');
+        ylabel('Amplitude');
+        title(titles{(i-1)*2+j}, 'Interpreter','latex', 'FontSize',14);
+        legend('Location','best');
+    end
+end
+sgtitle('Comparison of Markov Parameters: Deterministic vs Identified Model', ...
+        'Interpreter','latex','FontSize',16);
+
+outputFolder = fullfile('figures','problem_6','Markov_comparison');
+if ~exist(outputFolder,'dir'), mkdir(outputFolder); end
+exportgraphics(gcf, fullfile(outputFolder,'Markov_comparison.pdf'),'ContentType','vector');
+disp('✅ Markov parameter comparison figure saved.');
+
+
+
+%% Tranfer function in nice form
+% Convert from SS to TF
+
+% Extract each transfer function
+G11 = Gyu(1,1);
+G12 = Gyu(1,2);
+G21 = Gyu(2,1);
+G22 = Gyu(2,2);
+
+
+
+% Compute for all G_ij
+[K11, tau11] = extractParams(G11);
+[K12, tau12] = extractParams(G12);
+[K21, tau21] = extractParams(G21);
+[K22, tau22] = extractParams(G22);
+
+% Print in canonical form
+fprintf('\n--- Canonical Transfer Function Forms from linearization ---\n');
+fprintf('G11(s) = %.4e / (%.2fs + 1)\n', K11, tau11);
+fprintf('G12(s) = %.4e / ((%.2fs + 1)(%.2fs + 1))\n', K12, tau12(1), tau12(2));
+fprintf('G21(s) = %.4e / ((%.2fs + 1)(%.2fs + 1))\n', K21, tau21(1), tau21(2));
+fprintf('G22(s) = %.4e / (%.2fs + 1)\n', K22, tau22);
+
+%%
 
 % ------------------------------------------------------------
 % Supporting residual function
@@ -157,3 +271,17 @@ step(Gyu)
 function r = FourTankSystemSteadyResidual(x, u, d, p)
 r = FourTankSystemModified(0, x, u, d, p); % residual f(x)=0
 end
+
+% Helper to extract K, tau(s)
+function [K, tau] = extractParams(G)
+    [num, den] = tfdata(G, 'v');
+    % Normalize denominator
+    den = den / den(end); 
+    poles = roots(den);
+    taus = -1 ./ real(poles);
+    K = dcgain(G);
+    tau = sort(taus);
+end
+
+
+

@@ -12,9 +12,9 @@ p = [a1; a2; a3; a4; A1; A2; A3; A4; g; gamma1; gamma2; rho];
 % Simulation scenario
 % ------------------------------------------------------------
 t0 = 0.0;        % [s]
-tf = 60*30;      % [s]
+t_final = 60*30;      % [s]
 Ts = 1;          % [s]
-t = t0:Ts:tf;
+t = t0:Ts:t_final;
 N = length(t);
 
 F1 = 300; F2 = 300;
@@ -150,7 +150,7 @@ text(198, 0.5, '$T_1$', 'Interpreter','latex', ...
      'HorizontalAlignment','right', 'Color','red');
 
 yline(0.632*0.301, 'r--', 'LineWidth', 1.2);
-text(200, 0.632*0.301, '$0.632K_1$', 'Interpreter','latex', ...
+text(1400, 0.632*0.301, '$0.632 \cdot K_{11}$', 'Interpreter','latex', ...
      'VerticalAlignment','bottom', 'Color','red');
 
 axes(ax_tf(2,2));  % G22 plot
@@ -159,7 +159,7 @@ text(220, 0.5, '$T_2$', 'Interpreter','latex', ...
      'Rotation',90, 'VerticalAlignment','bottom', ...
      'HorizontalAlignment','right', 'Color','red');
 yline(0.632*0.415, 'r--', 'LineWidth', 1.2);
-text(225, 0.632*0.415, '$0.632K_{22}$', 'Interpreter','latex', ...
+text(1400, 0.632*0.415, '$0.632\cdot K_{22}$', 'Interpreter','latex', ...
      'VerticalAlignment','bottom', 'Color','red');
 exportgraphics(fig_tf, fullfile(outputFolder, 'normalized_tf_with_identification.pdf'), 'ContentType', 'vector');
 
@@ -267,6 +267,154 @@ fprintf('G11(s): K = %.4e, tau = %.2f s\n', K11_est, tau11);
 fprintf('G22(s): K = %.4e, tau = %.2f s\n', K22_est, tau22);
 fprintf('G12(s): K = %.4e, taus = [%.2f, %.2f] s\n', K12_est, sort(tau12));
 fprintf('G21(s): K = %.4e, taus = [%.2f, %.2f] s\n', K21_est, sort(tau21));
+
+%%
+disp('--- Computing discrete-time Markov parameters using mimoctf2dss ---');
+
+% --- Sampling settings ---
+Ts   = 10;      % [s] sampling time
+Nmax = 100;    % maximum state dimension
+tol  = 1e-8;   % numerical tolerance
+
+% --- Extract numerator and denominator directly from identified models ---
+num = cell(2,2);
+den = cell(2,2);
+lambda = zeros(2,2);
+
+num{1,1} = G11_est.Numerator;  den{1,1} = G11_est.Denominator;
+num{1,2} = G12_est.Numerator;  den{1,2} = G12_est.Denominator;
+num{2,1} = G21_est.Numerator;  den{2,1} = G21_est.Denominator;
+num{2,2} = G22_est.Numerator;  den{2,2} = G22_est.Denominator;
+
+% --- Convert continuous-time MIMO TF to discrete-time state-space ---
+[Ad, Bd, Cd, Dd, sH] = mimoctf2dss(num, den, lambda, Ts, Nmax, tol);
+
+% Save them to a .mat file
+save('discrete_model_from_step.mat', 'Ad', 'Bd', 'Cd', 'Dd', 'sH');
+
+
+% --- Compute Markov parameters ---
+Nimp = 1800/Ts;
+ny = size(Cd,1);
+nu = size(Bd,2);
+H = zeros(ny, nu, Nimp);
+H(:,:,1) = Dd;
+for k = 2:Nimp
+    H(:,:,k) = Cd * (Ad^(k-2)) * Bd;
+end
+
+% --- Save the Markov parameters for later comparison ---
+H_identified_problem_4 = H;  % save in a clear variable
+save('H_identified_problem_4.mat','H_identified_problem_4','Ts');
+disp('✅ Saved identified Markov parameters to Markov_identified.mat');
+
+
+% --- Plot Markov parameters ---    
+figure('Name','Discrete-Time Markov Parameters');
+titles = {'$h_{11}[k]$', '$h_{12}[k]$', '$h_{21}[k]$', '$h_{22}[k]$'};
+for i = 1:2
+    for j = 1:2
+        subplot(2,2,(i-1)*2+j);
+        plot(0:Nimp-1, squeeze(H(i,j,:)), 'rx',  'LineWidth', 1.3);
+        grid on;
+        xlabel('Sample $k$', 'Interpreter','latex', 'FontSize',13);
+        ylabel('Amplitude', 'FontSize',12);
+        title(titles{(i-1)*2+j}, 'Interpreter','latex', 'FontSize',14);
+    end
+end
+sgtitle('Impulse Response Coefficients (Markov Parameters)', ...
+        'Interpreter','latex','FontSize',15);
+
+% --- Optional: Hankel singular values ---
+figure('Name','Hankel Singular Values');
+semilogy(sH,'b.-','LineWidth',1.5,'MarkerSize',10);
+grid on;
+xlabel('State number');
+ylabel('Singular Value');
+title('Hankel Singular Values (Model Order Content)', 'FontSize',12);
+
+disp('✅ Markov parameter computation complete.');
+
+
+%% suggestion from chat
+%% === Impulse responses of estimated transfer functions ===
+disp('--- Plotting impulse responses for estimated transfer functions ---');
+
+% Convert identified idtf models to tf
+G11_tf = tf(G11_est);
+G12_tf = tf(G12_est);
+G21_tf = tf(G21_est);
+G22_tf = tf(G22_est);
+
+titles = {
+    '$G_{11}$ : $h_1 \leftarrow F_1$', ...
+    '$G_{12}$ : $h_1 \leftarrow F_2$', ...
+    '$G_{21}$ : $h_2 \leftarrow F_1$', ...
+    '$G_{22}$ : $h_2 \leftarrow F_2$'};
+
+% Colors
+color_ct = [0 0.45 0.74];   % blue for continuous impulse
+color_d  = [0.95 0. 0.1]; % red for discrete Markov
+
+figure('Name','Impulse Responses of Estimated Transfer Functions');
+set(gcf, 'Position', [100 100 1000 640]);  % [left bottom width height]
+
+% G11
+subplot(2,2,1); hold on; grid on;
+[Y, T] = impulse(G11_tf, t);
+plot(T, Y, 'Color', color_ct, 'LineWidth', 2, 'DisplayName', 'Continuous-time impulse');
+plot((0:Nimp-1)*Ts, squeeze(H(1,1,:))./Ts, 'x', ...
+     'Color', color_d, 'LineWidth', 1.3, 'DisplayName', 'Discrete Markov');
+xlabel('Time [s]', 'FontSize', 12, 'FontWeight','bold');
+ylabel('Amplitude', 'FontSize', 12, 'FontWeight','bold');
+title(titles{1}, 'Interpreter','latex', 'FontSize',14);
+legend('Location','northeast', 'Interpreter','latex');
+set(gca, 'FontSize', 11);
+
+% G12
+subplot(2,2,2); hold on; grid on;
+[Y, T] = impulse(G12_tf, t);
+plot(T, Y, 'Color', color_ct, 'LineWidth', 2, 'DisplayName', 'Continuous-time impulse');
+plot((0:Nimp-1)*Ts, squeeze(H(1,2,:))./Ts, 'x', ...
+     'Color', color_d, 'LineWidth', 1.3, 'DisplayName', 'Discrete Markov');
+xlabel('Time [s]', 'FontSize', 12, 'FontWeight','bold');
+ylabel('Amplitude', 'FontSize', 12, 'FontWeight','bold');
+title(titles{2}, 'Interpreter','latex', 'FontSize',14);
+legend('Location','northeast', 'Interpreter','latex');
+set(gca, 'FontSize', 11);
+
+% G21
+subplot(2,2,3); hold on; grid on;
+[Y, T] = impulse(G21_tf, t);
+plot(T, Y, 'Color', color_ct, 'LineWidth', 2, 'DisplayName', 'Continuous-time impulse');
+plot((0:Nimp-1)*Ts, squeeze(H(2,1,:))./Ts, 'x', ...
+     'Color', color_d, 'LineWidth', 1.3, 'DisplayName', 'Discrete Markov');
+xlabel('Time [s]', 'FontSize', 12, 'FontWeight','bold');
+ylabel('Amplitude', 'FontSize', 12, 'FontWeight','bold');
+title(titles{3}, 'Interpreter','latex', 'FontSize',14);
+legend('Location','northeast', 'Interpreter','latex');
+set(gca, 'FontSize', 11);
+
+% G22
+subplot(2,2,4); hold on; grid on;
+[Y, T] = impulse(G22_tf, t);
+plot(T, Y, 'Color', color_ct, 'LineWidth', 2, 'DisplayName', 'Continuous-time impulse');
+plot((0:Nimp-1)*Ts, squeeze(H(2,2,:))./Ts, 'x', ...
+     'Color', color_d, 'LineWidth', 1.3, 'DisplayName', 'Discrete Markov');
+xlabel('Time [s]', 'FontSize', 12, 'FontWeight','bold');
+ylabel('Amplitude', 'FontSize', 12, 'FontWeight','bold');
+title(titles{4}, 'Interpreter','latex', 'FontSize',14);
+legend('Location','northeast', 'Interpreter','latex');
+set(gca, 'FontSize', 11);
+
+% Save figure
+outputFolder = fullfile('figures','problem_4','Markov_parameters');
+if ~exist(outputFolder,'dir'), mkdir(outputFolder); end
+exportgraphics(gcf, fullfile(outputFolder,'impulse_responses_comparison.pdf'),'ContentType','vector');
+
+disp('✅ Impulse responses plotted, labeled, and saved.');
+
+
 
 %% 4.2 step responses with process and measurement noise
 % --- Define measurement noise levels ---
