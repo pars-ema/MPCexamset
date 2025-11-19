@@ -44,8 +44,8 @@ function [t, y_true, y_measured] = simulate_sde(t, x0, u, d, p, sigma_measuremen
     % --- Noise intensities ---
     sigma1 = 0;
     sigma2 = 0;
-    sigma3 = 100;
-    sigma4 = 100;
+    sigma3 = 10;
+    sigma4 = 10;
 
     % --- Mean disturbances ---
     F3 = d(1);

@@ -272,19 +272,19 @@ fprintf('G21(s): K = %.4e, taus = [%.2f, %.2f] s\n', K21_est, sort(tau21));
 disp('--- Computing discrete-time Markov parameters using mimoctf2dss ---');
 
 % --- Sampling settings ---
-Ts   = 10;      % [s] sampling time
+Ts   = 30;      % [s] sampling time
 Nmax = 100;    % maximum state dimension
-tol  = 1e-8;   % numerical tolerance
+tol  = 1e-5;   % numerical tolerance
 
 % --- Extract numerator and denominator directly from identified models ---
 num = cell(2,2);
 den = cell(2,2);
 lambda = zeros(2,2);
 
-num{1,1} = G11_est.Numerator;  den{1,1} = G11_est.Denominator;
+num{1,1} = G11_est.Numerator;  den{1,1} = [0 G11_est.Denominator];
 num{1,2} = G12_est.Numerator;  den{1,2} = G12_est.Denominator;
 num{2,1} = G21_est.Numerator;  den{2,1} = G21_est.Denominator;
-num{2,2} = G22_est.Numerator;  den{2,2} = G22_est.Denominator;
+num{2,2} = G22_est.Numerator;  den{2,2} = [0 G22_est.Denominator];
 
 % --- Convert continuous-time MIMO TF to discrete-time state-space ---
 [Ad, Bd, Cd, Dd, sH] = mimoctf2dss(num, den, lambda, Ts, Nmax, tol);

@@ -163,7 +163,7 @@ step(Gyu)
 % ------------------------------------------------------------
 %  Discretization of the linearized 4-tank model with mimoctf2dss
 % ------------------------------------------------------------
-Ts   = 10;        % sampling time [s]
+Ts   = 30;        % sampling time [s]
 Nmax = 100;      % maximum state dimension
 tol  = 1e-8;     
 lambda = zeros(2,2); % assume no pure time delay

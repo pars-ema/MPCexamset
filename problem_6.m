@@ -4,134 +4,309 @@ clear; clc; close all;
 load('discrete_model_from_step.mat',          'Ad','Bd','Cd','Dd');  Ad_step=Ad; Bd_step=Bd; Cd_step=Cd; Dd_step=Dd;
 load('discrete_model_from_linearization.mat', 'Ad','Bd','Cd','Dd');  Ad_lin =Ad; Bd_lin =Bd; Cd_lin =Cd; Dd_lin =Dd;
 
-Ts = 10;                        % <- set your sampling time if needed
-nxS = size(Ad_step,1); nyS = size(Cd_step,1); nuS = size(Bd_step,2);
-nxL = size(Ad_lin ,1); nyL = size(Cd_lin ,1); nuL = size(Bd_lin ,2);
-N   = 800;                     % simulation length
+% Ts = 10;              
+% nxS = size(Ad_step,1); nyS = size(Cd_step,1); nuS = size(Bd_step,2);
+% nxL = size(Ad_lin ,1); nyL = size(Cd_lin ,1); nuL = size(Bd_lin ,2);
+% N   = 800;                     % simulation length
 
 
 %%
-% --- Tuning (start conservative, scale later) ---
-Q_step = 12.5*eye(nxS);   R_step = 2*eye(nyS);  S_step = zeros(nxS,nyS);
-Q_lin  = 1e-6*eye(nxL);   R_lin  = 1e-4*eye(nyL);  S_lin  = zeros(nxL,nyL);
+%% -------------------------------------------------------------
+%  Setup: dimensions, noise covariances, simulation length
+% --------------------------------------------------------------
+Ts = 10;      % sampling time [s]
+N  = 800;     % number of simulation steps
 
-% --- Static (steady-state) Kalman filter gains (dlqe) ---
-% Identified model
-[Lss_step, Pss_step, ~] = dlqe(Ad_step, eye(nxS), Cd_step, Q_step, R_step, S_step);
-% Linearized model
-[Lss_lin , Pss_lin , ~] = dlqe(Ad_lin , eye(nxL), Cd_lin , Q_lin ,  R_lin ,  S_lin );
+% Choose the model you want to simulate:
+Ad = Ad_step;   Bd = Bd_step;   Cd = Cd_step;   Dd = Dd_step;
+%Ad = Ad_lin;  Bd = Bd_lin;    Cd = Cd_lin;    Dd = Dd_lin;
 
-% --- Helper: dynamic KF recursion ---
-kf_dyn = @(A,B,C,Q,R,u,y,x0,P0) ...
-    local_dynamic_kf(A,B,C,Q,R,u,y,x0,P0);
+nx = size(Ad,1);
+ny = size(Cd,1);
+nu = size(Bd,2);
 
-% --- Helper: static KF recursion (fixed L) ---
-kf_ss  = @(A,B,C,L,u,y,x0) ...
-    local_static_kf(A,B,C,L,u,y,x0);
+% Disturbance/measurement noise covariance (tune these!)
+Q = 1e-4 * eye(nx);     % process noise covariance
+R = 1e-3 * eye(ny);     % measurement noise covariance
+S = zeros(nx,ny);       % cross covariance (usually zero)
+
+% Storage
+x      = zeros(nx,N);     % true state
+x_non_linear = zeros(nx,N);
+y      = zeros(ny,N);     % measurements
+u      = ones(nu,N).*250;     % inputs
+xhat   = zeros(nx,N);     % KF estimate
+Pstore = zeros(nx,nx,N);  % KF covariance history
+
+% Initial values
+x(:,1)    = zeros(nx,1);
+xhat(:,1) = zeros(nx,1);
+P         = 1*eye(nx);
 
 
-% --- Choose which model generates the "plant" for this experiment ---
-Atrue = Ad_step; Btrue = Bd_step; Ctrue = Cd_step; Dtrue = Dd_step;
-nx = size(Atrue,1); ny = size(Ctrue,1); nu = size(Btrue,2);
+%% -------------------------------------------------------------
+%   Dynamic Kalman Filter loop
+% --------------------------------------------------------------
+for k = 1:N-1
 
-% Inputs (you can replace with your real inputs)
-u = zeros(nu,N);
-u(1,1:N) = 250; u(2,1:N) = 250;   % small excitation
+    %% ---- Simulate true system (with stochastic disturbances) ----
+    wk = mvnrnd(zeros(nx,1), Q)';   % process noise
+    vk = mvnrnd(zeros(ny,1), R)';   % measurement noise
 
-% Generate a baseline stochastic scenario (no step changes)
-Qtrue = 1e-7*eye(nx);   Rtrue = 1e-4*eye(ny);
-xtrue = zeros(nx,N); ymeas = zeros(ny,N);
-rng(1);
-for k=2:N
-    xtrue(:,k) = Atrue*xtrue(:,k-1) + Btrue*u(:,k-1) + chol(Qtrue,'lower')*randn(nx,1);
-    ymeas(:,k) = Ctrue*xtrue(:,k)   + Dtrue*u(:,k)   + chol(Rtrue,'lower')*randn(ny,1);
+    y(:,k) = Cd * x(:,k) + vk;
+    x(:,k+1) = Ad*x(:,k) + Bd*u(:,k) + wk;
+
+
+    %% ---- Prediction (time update) ----
+    xhat_pred = Ad*xhat(:,k) + Bd*u(:,k);
+    P_pred    = Ad*P*Ad' + Q;   % if S = 0
+
+
+    %% ---- Measurement Update ----
+    ek   = y(:,k) - Cd*xhat_pred;                    % innovation
+    Re   = Cd*P_pred*Cd' + R;                       % innovation covariance
+    Kx   = P_pred*Cd'/Re;                           % state gain (Kf_x)
+                                                   % (scalar inversion is ok)
+    % Kf_w not needed unless you estimate disturbances
+
+
+    xhat(:,k) = xhat_pred + Kx*ek;                  % updated estimate
+    P         = P_pred - Kx*Re*Kx';                 % cov update
+
+    Pstore(:,:,k) = P;                              % store
 end
 
-% Run dynamic KF (time-varying)
-x0 = zeros(nx,1); P0 = 1e-2*eye(nx);
-[xhat_dyn, ~] = kf_dyn(Atrue,Btrue,Ctrue,Q_step,R_step,u,ymeas,x0,P0);
-
-% Run static KF (steady-state)
-xhat_ss = kf_ss(Atrue,Btrue,Ctrue,Lss_step,u,ymeas,x0);
-
-% Compare
-figure; t=0:N-1;
-subplot(2,1,1); plot(t,xtrue(1,:),'-', t,xhat_dyn(1,:),'--', t,xhat_ss(1,:),':','LineWidth',1.25);
-xlabel('k'); ylabel('x_1'); legend('True','Dynamic KF','Static KF'); grid on;
-subplot(2,1,2); plot(t,xtrue(2,:),'-', t,xhat_dyn(2,:),'--', t,xhat_ss(2,:),':','LineWidth',1.25);
-xlabel('k'); ylabel('x_2'); legend('True','Dynamic KF','Static KF'); grid on;
-title('Baseline noise (no step disturbances)');
+y(:,N)    = Cd*x(:,N);   % last measurement
+xhat(:,N) = xhat(:,N-1); % extend
 
 
-%%
-% --- Augmentation for output-bias random walk ---
-% x_aug = [x; d],  y = [I]*[C  I]*[x; d] + v
-Abar = [Atrue, zeros(nx,ny); zeros(ny,nx), eye(ny)];
-Bbar = [Btrue; zeros(ny,nu)];
-Cbar = [Ctrue, eye(ny)];
-Dbar = [Dtrue];
+%% -------------------------------------------------------------
+%  Static Kalman Filter gain (solve DARE)
+% --------------------------------------------------------------
+[Pinf,~,~] = dare(Ad', Cd', Q, R);
+K_static = Pinf * Cd' / (Cd*Pinf*Cd' + R);
 
-% Noise covariances: process noise includes both x and bias d
-Qx   = Q_step;              % state process noise (tune)
-Qd   = (1e-7)*eye(ny);      % bias random walk (small to allow slow steps)
-Qbar = blkdiag(Qx, Qd);
-Rbar = R_step;
+xhat_s = zeros(nx,N);
+xhat_s(:,1) = zeros(nx,1);
 
-% Initials
-x0bar = zeros(nx+ny,1);  P0bar = blkdiag(1e-2*eye(nx), 1e-2*eye(ny));
+for k = 1:N-1
+    y(:,k) = Cd*x(:,k);   % reuse simulated measurement
 
-% Build a test with actual step change in output bias at k=350
-y_meas_step = ymeas;
-y_meas_step(:,350:end) = y_meas_step(:,350:end) + [0.3; -0.25];  % step biases
-
-% Dynamic KF on augmented system
-[xhat_dyn_bar, ~] = kf_dyn(Abar,Bbar,Cbar,Qbar,Rbar,u,y_meas_step,x0bar,P0bar);
-
-% Static (steady-state) KF on augmented system
-[Lss_bar, ~, ~] = dlqe(Abar, eye(nx+ny), Cbar, Qbar, Rbar, zeros(nx+ny,ny));
-xhat_ss_bar = kf_ss(Abar,Bbar,Cbar,Lss_bar,u,y_meas_step,x0bar);
-
-% Extract state estimates (first nx are the physical states; last ny are biases)
-xhat_dyn_of = xhat_dyn_bar(1:nx, :);
-dbias_dyn   = xhat_dyn_bar(nx+1:end, :);
-xhat_ss_of  = xhat_ss_bar(1:nx, :);
-dbias_ss    = xhat_ss_bar(nx+1:end, :);
-
-% Compare
-figure; t=0:N-1;
-subplot(2,1,1); plot(t,xtrue(1,:),'-', t,xhat_dyn_of(1,:),'--', t,xhat_ss_of(1,:),':','LineWidth',1.25);
-xlabel('k'); ylabel('x_1'); legend('True','Dyn OF-KF','SS OF-KF'); grid on;
-subplot(2,1,2); plot(t, y_meas_step(1,:) - (Ctrue(1,:)*xhat_dyn_of), 'LineWidth',1.25); hold on;
-plot(t, dbias_dyn(1,:), '--', 'LineWidth',1.25);
-legend('Residual (y-Cx)','Estimated bias d_1'); xlabel('k'); grid on;
-title('Offset-free augmentation (output-bias random walk)');
-
-%%
-function [xhat, P_hist] = local_dynamic_kf(A,B,C,Q,R,u,y,x0,P0)
-nx = size(A,1); N = size(y,2);
-xhat = zeros(nx,N); xhat(:,1) = x0; P = P0; P_hist = zeros(nx,nx,N); P_hist(:,:,1)=P;
-for k=2:N
     % Prediction
-    xpred = A*xhat(:,k-1) + B*u(:,k-1);
-    Ppred = A*P*A' + Q;
-    % Update
-    Re = C*Ppred*C' + R;
-    K  = (Ppred*C')/Re;
-    e  = y(:,k) - C*xpred;
-    xhat(:,k) = xpred + K*e;
-    P  = (eye(nx)-K*C)*Ppred;
-    P_hist(:,:,k)=P;
-end
-end
+    xhat_pred = Ad*xhat_s(:,k) + Bd*u(:,k);
 
-function xhat = local_static_kf(A,B,C,L,u,y,x0)
-nx = size(A,1); N = size(y,2);
-xhat = zeros(nx,N); xhat(:,1)=x0;
-for k=2:N
-    xpred = A*xhat(:,k-1) + B*u(:,k-1);
-    e     = y(:,k) - C*xpred;
-    xhat(:,k) = xpred + L*e;      % fixed gain
-end
+    % Update using constant gain
+    ek_s = y(:,k) - Cd*xhat_pred;
+    xhat_s(:,k+1) = xhat_pred + K_static * ek_s;
 end
 
 
+figure;
+for i = 1:nx
+    subplot(nx,1,i)
+    plot(x(i,:), 'k', 'LineWidth',1.2); hold on;
+    plot(xhat(i,:), 'r--', 'LineWidth',1.2);
+    title(['State ' num2str(i)]);
+    legend('True','KF Estimate');
+end
+
+%%
+% -----------------------------------------------------------
+% Parameters
+% -----------------------------------------------------------
+a1 = 1.2272; a2 = 1.2272; a3 = 1.2272; a4 = 1.2272;        % [cm2]
+A1 = 380.1327; A2 = 380.1327; A3 = 380.1327; A4 = 380.1327; % [cm2]
+g = 981; rho = 1.00;
+gamma1 = 0.58; gamma2 = 0.72;
+p = [a1; a2; a3; a4; A1; A2; A3; A4; g; gamma1; gamma2; rho];
+compare_linear_kf_with_sde(p)
+
+
+function compare_linear_kf_with_sde(p)
+
+    % -----------------------------------------------------------
+    % 1. LOAD DISCRETE-TIME LINEAR MODEL (Problem 5)
+    % -----------------------------------------------------------
+    % We assume this model is: x_{k+1} = A x_k + B u_k,  y_k = C x_k
+    % and that states are heights (or at least consistent with SDE model).
+    %
+    % From the slides, this corresponds to:
+    %   x_{k+1} = A x_k + G w_k
+    %   y_k     = C x_k + v_k
+    % where we will add G and noise later.
+    % -----------------------------------------------------------
+    load('discrete_model_from_linearization.mat','Ad','Bd','Cd');
+
+    Ad_lin = Ad;
+    Bd_lin = Bd;
+    
+    % We only use measurements from tank 1 and 2:
+    % C_meas x = [h1; h2]
+    C_meas = Cd(1:2,:);   % 2 x nx
+    ny = size(C_meas,1);
+
+    % -----------------------------------------------------------
+    % 2. SIMULATION PARAMETERS (NONLINEAR "TRUE" MODEL)
+    % -----------------------------------------------------------
+    t  = 0:10:1800;         % [s]
+    Ts = 10;
+    x0 = [100; 100; 100; 100];
+    u  = [20; 20] * ones(1,length(t));  % constant pumps
+    d  = [300; 300];                    % mean disturbances F3, F4
+
+    sigma_meas = [5;5;5;5];             % measurement noise std for all 4 sensors
+
+    % Nonlinear SDE simulation (truth)
+    % simulate_sde implements the stochastic nonlinear model using Euler–Maruyama.
+    [~, y_true, y_meas] = simulate_sde(t, x0, u, d, p, sigma_meas, false);
+
+    % Extract the two measurements that the KF will actually use:
+    y_meas_2 = y_meas(1:2,:);           % measured (noisy) h1, h2
+    y_true_2 = y_true(1:2,:);           % true h1, h2
+
+    % -----------------------------------------------------------
+    % 3. DIMENSIONS
+    % -----------------------------------------------------------
+    nx = size(Ad_lin,1);
+
+    % -----------------------------------------------------------
+    % 4. NOISE MODELS (Q, R) AND G MATRIX
+    % -----------------------------------------------------------
+    % Measurement noise covariance R:
+    % Slides: v_k ~ N(0, R)
+    %
+    % We only use h1, h2 -> use their variances:
+    R = diag(sigma_meas(1:2).^2);   % 2 x 2
+
+    % Process noise:
+    % In the slides, x_{k+1} = A x_k + G w_k,  w_k ~ N(0, Q)
+    % We do NOT try to perfectly reproduce the SDE noise here.
+    % Instead, we treat process noise as generic modeling error + disturbances.
+    %
+    % Choice: G = I, Q = q * I
+    % This matches the simple case in the slides (S = 0, G = I).
+    % You can tune q to trade off smoothness vs. tracking.
+    q = 1e-2;                    % <-- try 1e-3, 1e-2, 1e-1 to see effect
+    G = eye(nx);
+    Q = q * eye(nx);
+
+    % -----------------------------------------------------------
+    % 5. STATIC (TIME-INVARIANT) KALMAN FILTER (Slides 28–31)
+    % -----------------------------------------------------------
+    % Slides: Discrete Algebraic Riccati Equation (DARE)
+    %
+    %   P = A P A' + G Q G' - (A P C' + G S)(C P C' + R)^{-1}(A P C' + G S)'
+    %
+    % With S = 0, G = I, this simplifies and MATLAB dare uses:
+    %   P = dare(A', C', G Q G', R)
+    %
+    % Then the stationary Kalman gain is:
+    %   Re = C P C' + R
+    %   K  = P C' Re^{-1}
+    % -----------------------------------------------------------
+    S = zeros(nx,ny);  %#ok<NASGU>  % no cross-covariance
+    [P_ss,~,~] = dare(Ad_lin', C_meas', G*Q*G', R);   % P_ss = steady-state P
+
+    Re_ss = C_meas * P_ss * C_meas' + R;             % Re = CPC' + R
+    K_ss  = P_ss * C_meas' / Re_ss;                  % Kfx = PC' Re^{-1}
+
+    % -----------------------------------------------------------
+    % 6. DYNAMIC (TIME-VARYING) KALMAN FILTER (Slides 19–23)
+    % -----------------------------------------------------------
+    % Time-varying KF starts with some P0 and recursively updates:
+    %
+    % Measurement update:
+    %   Re,k = C P_{k|k-1} C' + R
+    %   K_k  = P_{k|k-1} C' Re,k^{-1}
+    %   e_k  = y_k - C x̂_{k|k-1}
+    %   x̂_{k|k} = x̂_{k|k-1} + K_k e_k
+    %   P_{k|k} = P_{k|k-1} - K_k Re,k K_k'
+    %
+    % Time update:
+    %   x̂_{k+1|k} = A x̂_{k|k} + B u_k
+    %   P_{k+1|k} = A P_{k|k} A' + G Q G'
+    % -----------------------------------------------------------
+    xhat_dyn = zeros(nx,length(t));   % dynamic KF estimate
+    P_dyn    = 10*eye(nx);            % initial covariance (tunable)
+
+    xhat_dyn(:,1) = x0;
+
+    % -----------------------------------------------------------
+    % 7. STATIC KF ESTIMATE STORAGE
+    % -----------------------------------------------------------
+    xhat_stat = zeros(nx,length(t));
+    xhat_stat(:,1) = x0;
+
+    % -----------------------------------------------------------
+    % 8. MAIN FILTERING LOOP
+    % -----------------------------------------------------------
+    for k = 1:length(t)-1
+
+        % ------------------------- STATIC KF (steady-state K_ss) -------------------------
+        % Time update:
+        %   x̂_{k+1|k} = A x̂_{k|k} + B u_k
+        x_pred_stat = Ad_lin * xhat_stat(:,k) + Bd_lin * u(:,k);
+
+        % Measurement update with constant K_ss:
+        %   e_k = y_k - C x̂_{k|k-1}
+        yk = y_meas_2(:,k);
+        e_stat = yk - C_meas * x_pred_stat;
+
+        %   x̂_{k+1|k+1} = x̂_{k+1|k} + K_ss e_k
+        xhat_stat(:,k+1) = x_pred_stat + K_ss * e_stat;
+
+        % ------------------------- DYNAMIC KF (time-varying K_k) ------------------------
+        % Time update:
+        x_pred_dyn = Ad_lin * xhat_dyn(:,k) + Bd_lin * u(:,k);
+        P_pred_dyn = Ad_lin * P_dyn * Ad_lin' + G * Q * G';
+
+        % Measurement update as in slides 19–23:
+        yk = y_meas_2(:,k);
+        e_dyn = yk - C_meas * x_pred_dyn;               % ek = yk - Cx̂k|k-1
+
+        Re_k = C_meas * P_pred_dyn * C_meas' + R;       % Re,k = C P C' + R
+        K_k  = P_pred_dyn * C_meas' / Re_k;             % Kfx,k = P C' Re^{-1}
+
+        xhat_dyn(:,k+1) = x_pred_dyn + K_k * e_dyn;     % x̂k|k = x̂k|k-1 + K ek
+        P_dyn = P_pred_dyn - K_k * Re_k * K_k';         % Pk|k = Pk|k-1 - K Re K'
+    end
+
+    % -----------------------------------------------------------
+    % 9. OUTPUTS FROM ESTIMATES
+    % -----------------------------------------------------------
+    y_est_stat = C_meas * xhat_stat;   % static KF output estimate (h1,h2)
+    y_est_dyn  = C_meas * xhat_dyn;    % dynamic KF output estimate (h1,h2)
+
+    % -----------------------------------------------------------
+    % 10. PLOTS AND COMPARISONS
+    % -----------------------------------------------------------
+    figure;
+    for i = 1:2
+        subplot(2,2,i)
+        hold on; grid on;
+        plot(t, y_true_2(i,:), 'Color',[0.2 0.2 0.2], 'LineWidth', 1.5);  % true
+        plot(t, y_meas_2(i,:), 'k:', 'LineWidth', 1);                    % noisy
+        plot(t, y_est_stat(i,:), 'r--', 'LineWidth', 1.4);               % static KF
+        plot(t, y_est_dyn(i,:),  'b-.', 'LineWidth', 1.4);               % dynamic KF
+        xlabel('Time [s]');
+        ylabel(sprintf('h_%d [cm]', i));
+        title(sprintf('Tank %d: True vs Measured vs KF', i));
+        legend('True (nonlinear SDE)','Measured (noisy)','Static KF','Dynamic KF', ...
+               'Location','best');
+    end
+
+    % Innovation plots (to see if filter is "consistent")
+    for i = 1:2
+        subplot(2,2,2+i)
+        hold on; grid on;
+        innov_stat = y_meas_2(i,:) - y_est_stat(i,:);
+        innov_dyn  = y_meas_2(i,:) - y_est_dyn(i,:);
+        plot(t, innov_stat, 'r--', 'LineWidth', 1);
+        plot(t, innov_dyn,  'b-.', 'LineWidth', 1);
+        xlabel('Time [s]');
+        ylabel(sprintf('Innovation h_%d', i));
+        title(sprintf('Innovation for Tank %d', i));
+        legend('Static KF innovation','Dynamic KF innovation','Location','best');
+    end
+
+end

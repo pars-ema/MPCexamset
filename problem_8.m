@@ -57,7 +57,7 @@ end
 
 %% --- SIMULATE CLOSED-LOOP MPC AND PLOT ---
 
-Tf = 200;                 % number of simulation steps
+Tf = 1800;                 % number of simulation steps
 nx = size(Ad,1);
 ny = size(Cd,1);
 nu = size(Bd,2);
@@ -71,16 +71,25 @@ X(:,1) = x;
 Y(:,1) = Cd * x;
 
 for k = 1:Tf
-    % compute MPC input (unconstrained, from 8.3)
-    u = mpc_compute_unconstrained(mpc, x, xs, u_s);
 
-    % apply to discrete model
-    x = Ad * x + Bd * u;
+    % 1. compute deviation state
+    x_tilde = x - xs;
+
+    % 2. MPC control (deviation)
+    u_tilde = mpc.Kmpc * x_tilde;
+    u = u_s + u_tilde;
+
+    % 3. state update in deviation coordinates
+    x_tilde = Ad * x_tilde + Bd * u_tilde;
+
+    % 4. convert back to absolute
+    x = xs + x_tilde;
 
     % store
     X(:,k+1) = x;
     Y(:,k+1) = Cd * x;
-    U(:,k)   = u;
+    U(:,k) = u;
+
 end
 
 t = 0:Tf;
