@@ -22,8 +22,8 @@ F4 = d(2);                      % Flow rate as disturbance to tank 4 [g/cm3]
 qin = zeros(4,1);
 qin(1) = gamma(1) * F(1);      % Valve 1 to tank 1 [cm3/s]
 qin(2) = gamma(2) * F(2);      % Valve 2 to tank 2 [cm3/s]
-qin(3) = (1 - gamma(2)) * F(2) + F3;% Valve 2 to tank 3 [cm3/s]
-qin(4) = (1 - gamma(1)) * F(1) + F4;% Valve 1 to tank 4 [cm3/s]
+qin(3) = (1 - gamma(2)) * F(2);% Valve 2 to tank 3 [cm3/s]
+qin(4) = (1 - gamma(1)) * F(1);% Valve 1 to tank 4 [cm3/s]
 
 % Outflows
 h = m ./ (rho * A);            % Liquid level in each tank [cm]
