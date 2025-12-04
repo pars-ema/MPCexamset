@@ -210,7 +210,7 @@ t    = (0:Tsim-1)*Ts;
 
 disp('=== EXPERIMENT A: Reference steps, disturbances = 0 ===');
 
-t_change_h1 = [0 600 1600];
+t_change_h1 = [0 600 1300];
 values_h1   = [zs(1) zs(1)*1.3 zs(1)*0.8];
 
 t_change_h2 = [0 600 1600];

@@ -180,6 +180,8 @@ end
 % Convert continuous-time MIMO TF to discrete-time state-space
 [Ad,Bd,Cd,Dd,sH] = mimoctf2dss(num,den,lambda,Ts,Nmax,tol);
 
+disp('linearized')
+A, B, C, 
 % Display results
 disp('Discrete-time state-space matrices:');
 Ad, Bd, Cd, Dd
@@ -187,6 +189,39 @@ Ad, Bd, Cd, Dd
 % Save them to a .mat file
 save('discrete_model_from_linearization.mat', 'Ad', 'Bd', 'Cd', 'Dd', 'sH');
 
+%% Discretization via matrix exponential (ZOH)
+
+n = size(A,1);      % number of states
+m = size(B,2);      % number of inputs
+
+% Augmented continuous-time matrix:
+% [ A  B ]
+% [ 0  0 ]
+M = [A, B;
+     zeros(m, n+m)];
+
+% Matrix exponential
+Md = expm(M*Ts);
+
+% Extract Ad, Bd from
+% [Ad Bd] = exp([A B; 0 0]*Ts)
+Ad_exp = Md(1:n,       1:n);
+Bd_exp = Md(1:n, n+1:n+m);
+
+% Build discrete-time SS model for comparison
+Cd_exp = C;
+Dd_exp = zeros(size(C,1), m);
+
+sysd_exp = ss(Ad_exp, Bd_exp, Cd_exp, Dd_exp, Ts);
+
+disp('--- Discretization via matrix exponential (ZOH) ---');
+Ad = Ad_exp
+Bd = Bd_exp
+Cd = Cd_exp
+Dd = Dd_exp
+
+save('discrete_model_from_linearization.mat', 'Ad', 'Bd', 'Cd', 'Dd', 'sH');
+%%
 
 % Optional: plot Hankel singular values (to inspect order content)
 figure; semilogy(sH,'b.-','LineWidth',2,'MarkerSize',20);
@@ -232,7 +267,7 @@ end
 sgtitle('Comparison of Markov Parameters: Deterministic vs Identified Model', ...
         'Interpreter','latex','FontSize',16);
 
-outputFolder = fullfile('figures','problem_6','Markov_comparison');
+outputFolder = fullfile('figures','problem_5','Markov_comparison');
 if ~exist(outputFolder,'dir'), mkdir(outputFolder); end
 exportgraphics(gcf, fullfile(outputFolder,'Markov_comparison.pdf'),'ContentType','vector');
 disp('✅ Markov parameter comparison figure saved.');

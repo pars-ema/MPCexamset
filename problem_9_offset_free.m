@@ -239,7 +239,7 @@ disp('=== PROBLEM 9 – EXPERIMENT A: Reference steps, disturbances = 0 ===');
 t_change_h1 = [0 600 1600];
 values_h1   = [zs(1) zs(1)*1.3 zs(1)*0.8];
 
-t_change_h2 = [0 600 1600];
+t_change_h2 = [0 600 1300];
 values_h2   = [zs(2) zs(2)*1.3 zs(2)*1.0];
 
 [h1_ref_A, h2_ref_A] = generate_stair_references( ...

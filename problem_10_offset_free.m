@@ -1,31 +1,30 @@
 %% ========================================================================
-% PROBLEM 10 – Offset-Free MPC on LINEAR vs NONLINEAR Models
+% PROBLEM 10 – Input + Soft Output Constrained OFFSET-FREE MPC
+% Using SAME disturbance augmentation + KF idea as Problems 8 & 9:
 %
-% Controller:
-%   - SAME constrained offset-free MPC as in Problem 9
-%   - SAME augmented static Kalman Filter (x + d) as in Problem 6/9
+%   x_{k+1} = A x_k + B u_dev_k + E d_k
+%   d_{k+1} = d_k                  (random walk)
+%   y_k     = C x_k
 %
-% Plants compared:
-%   - Linear plant:      discrete-time linear model from linearization
-%   - Nonlinear plant:   FourTankSystemModified + FourTankSystemSensor
+% Augmented state for KF + MPC: x_e = [x; d]
 %
-% Experiments:
-%   A) Reference steps, disturbances d_dev = 0
-%   B) SAME reference steps as A, PLUS disturbance step later
+% New vs Problem 9:
+%   - SAME hard input constraints as before
+%   - PLUS soft output constraints on h1, h2 via slack variables
 %
-% QP solved with problem_7.m (must be on MATLAB path):
-%   [U,info] = problem_7(H,g,l,u,A,bl,bu,xinit)
+% Decision variables in QP:
+%   w = [U_seq; eps_seq]
+%     U_seq : stacked input deviations (N*nu x 1)
+%     eps   : stacked slacks for outputs (N*ny x 1)
 %
-% Requires on path:
-%   - FourTankSystemModified.m
-%   - FourTankSystemSensor.m
-%   - problem_7.m
+% QP solved with problem_7.m:
+%   [w_opt, info] = problem_7(H,f,l,u,Aqp,bl,bu,xinit)
 % ========================================================================
 
 clear; clc; close all;
 
 %% ========================================================================
-% 0) Physical parameters + steady-state (same as Problem 9, Ts = 10 s)
+% 0) Physical parameters + steady-state (same as P6/P8/P9)
 % ========================================================================
 
 Ts = 10;                % Sampling time [s]
@@ -39,11 +38,11 @@ gamma2 = 0.72;
 
 p = [a1;a2;a3;a4;A1;A2;A3;A4;g;gamma1;gamma2;rho];
 
-% Operating point
+% Operating point (same as P6/8/9)
 u_s = [300;300];          % [cm^3/s] (F1, F2)
-d_s = [250;250];          % [cm^3/s] (F3, F4) – only used for nonlinear model
+d_s = [250;250];          % [cm^3/s] (F3, F4)
 
-% Steady-state masses xs (for nonlinear model)
+% Steady-state masses xs (for nonlinear model / physical linearization)
 xs_guess = 500*ones(4,1);
 opts = optimoptions('fsolve','Display','none');
 xs = fsolve(@(x)FourTankSystemModified(0,x,u_s,d_s,p), xs_guess, opts);
@@ -52,15 +51,15 @@ fprintf("Steady-state xs (masses):\n");
 disp(xs);
 
 % Steady-state heights (all 4 tanks)
-h_s_abs = FourTankSystemSensor(xs,p);   % [4x1] heights in cm
-output_index = [1 2];                   % we measure tanks 1 and 2
-zs = h_s_abs(output_index);             % steady-state measured heights [2x1]
+h_s_abs_all = FourTankSystemSensor(xs,p);   % [4x1] heights in cm
+output_index = [1 2];                       % we measure tanks 1 and 2
+zs = h_s_abs_all(output_index);             % steady-state measured heights [2x1]
 
 fprintf("Steady-state zs = [h1_s; h2_s]:\n");
 disp(zs);
 
 %% ========================================================================
-% 1) Continuous linearization & discretization (same structure as P9)
+% 1) Continuous linearization & discretization (physical model, deviation)
 % ========================================================================
 
 nx = 4; nu = 2; nd = 2; ny = 2;
@@ -81,7 +80,7 @@ beta2 = c2/(2*sqrt(xs(2)));
 beta3 = c3/(2*sqrt(xs(3)));
 beta4 = c4/(2*sqrt(xs(4)));
 
-% Continuous-time A matrix (mass states)
+% Continuous-time A matrix (mass states, deviation form)
 A_c = rho * [
    -beta1,  0,       beta3,   0;
          0, -beta2,      0,  beta4;
@@ -97,7 +96,7 @@ B_c = rho * [
    1-gamma1,       0
 ];
 
-% Continuous-time disturbance input matrix E_c (F3,F4)
+% Continuous-time disturbance input matrix E_c (F3,F4 → tanks 3 & 4)
 E_c = [
     0, 0;
     0, 0;
@@ -105,7 +104,7 @@ E_c = [
     0, 1
 ];
 
-% Output matrix: masses -> h1,h2
+% Output matrix: masses → h1,h2
 C_c = [
     1/(rho*A1), 0, 0, 0;
     0, 1/(rho*A2), 0, 0
@@ -131,25 +130,25 @@ C = Cd;
 G = E;                      % disturbance / noise input matrix
 
 %% ========================================================================
-% 2) Noise covariances – SAME as Problem 6/9
+% 2) Noise covariances & augmented model (OFFSET-FREE)
 % ========================================================================
 
 % Process noise on disturbance channels w_k (2D: affects tanks 3 & 4)
-Qw = diag([25 25]);         % same as P6/P9
+Qw = diag([25 25]);         % same as in KF problems
 
 % Equivalent process noise on states: Qx = G Qw G'
-Qx = G * Qw * G';           % same as P6/P9
+Qx = G * Qw * G';
 
-% Disturbance random-walk covariance for augmented model
-Qd_RW = 1 * eye(nd);        % same as P6/P9
+% Random-walk disturbance model covariance
+Qd_RW = 1 * eye(nd);
 
 % Measurement noise covariance R (heights h1,h2)
-R_meas = diag([4 4]);       % std 2 cm on each level
+R_meas = diag([4 4]);       % (std = 2 cm)
 
-%% ========================================================================
-% 3) Augmented model for OFFSET-FREE MPC (x_e = [x; d])
-% ========================================================================
-
+% Augmented model x_e = [x; d]:
+%   x_{k+1} = A x_k + B u_dev_k + E d_k
+%   d_{k+1} = d_k
+%   y_k     = C x_k
 A_e = [A, E;
        zeros(nd,nx), eye(nd)];
 B_e = [B;
@@ -158,268 +157,156 @@ C_e = [C, zeros(ny,nd)];
 
 nx_e = nx + nd;
 
-%% ========================================================================
-% 4) STATIC KALMAN FILTER for augmented model (as in Azam / P6/P9)
-% ========================================================================
+% Augmented process covariance
+Q_e = blkdiag(Qx, Qd_RW);
 
-Q_e = blkdiag(Qx, Qd_RW);           % process covariance for [x; d]
-
-[P_e,~,~] = dare(A_e',C_e',Q_e,R_meas);
-P_e = 0.5*(P_e+P_e');               % enforce symmetry
-
-Re = C_e*P_e*C_e' + R_meas;
-K_e = P_e * C_e' / Re;              % [nx_e x ny] Kalman gain
-
+% Static augmented Kalman filter (stationary K_e)
+K_e = computeKF(A_e,C_e,Q_e,R_meas);
 fprintf("Static augmented KF gain norm: %.4f\n", norm(K_e));
 
 %% ========================================================================
-% 5) MPC prediction matrices (for augmented model)
+% 3) MPC prediction matrices (augmented model, deviation form)
 % ========================================================================
 
-N = 15;                             % prediction horizon
+N = 15;    % prediction horizon
 
-[Phi_x_e, Gamma_x_e] = buildPredictionMatrices(A_e,B_e,N);
-Phi   = kron(eye(N),C_e) * Phi_x_e;      % (N*ny x nx_e)
-Gamma = kron(eye(N),C_e) * Gamma_x_e;   % (N*ny x N*nu)
+% Weights
+Wz  = diag([1 1]);      % output tracking
+Wu  = 1e-4 * eye(nu);   % input magnitude
+Wdu = 1e-7 * eye(nu);   % input moves
 
-% Weights (same as Problem 9)
-Wz  = diag([1 1]);                  % output tracking weight
-Wu  = 1e-4*eye(nu);                 % input magnitude weight
+[Phi_x_e, Phi_u_e] = buildPredictionMatrices(A_e,B_e,N);
 
-Qbar = kron(eye(N),Wz);             % (N*ny x N*ny)
-Rbar = kron(eye(N),Wu);             % (N*nu x N*nu)
+Phi_z_x = kron(eye(N),C_e) * Phi_x_e;   % (N*ny x nx_e)
+Phi_z_u = kron(eye(N),C_e) * Phi_u_e;   % (N*ny x N*nu)
 
-% Hessian for constrained QP: 0.5*U'HU + f'U
-H = 2*(Gamma'*Qbar*Gamma + Rbar);
+Wz_big  = kron(eye(N),Wz);
+Wu_big  = kron(eye(N),Wu);
+Wdu_big = kron(eye(N),Wdu);
+
+% Δu operator
+E_du = zeros(N*nu, N*nu);
+E_du(1:nu,1:nu) = eye(nu);
+for j = 2:N
+    row = (j-1)*nu + (1:nu);
+    col = (j-1)*nu + (1:nu);
+    col_prev = (j-2)*nu + (1:nu);
+    E_du(row,col)      = eye(nu);
+    E_du(row,col_prev) = -eye(nu);
+end
 
 %% ========================================================================
-% 6) Input amplitude constraints (absolute pumps)
-%     0 <= u <= 600  (cm^3/s)
-% implemented via bounds on U_dev = [u_dev(k)...]
+% 4) Input constraints (absolute → deviation)
 % ========================================================================
 
-u_min_abs = [0; 0];
-u_max_abs = [600; 600];
+u_min_abs = [0;0];
+u_max_abs = [450;450];
 
-% Deviation constraints: u_dev = u - u_s
-lb_u_dev = u_min_abs - u_s;
-ub_u_dev = u_max_abs - u_s;
+u_min_dev = u_min_abs - u_s;
+u_max_dev = u_max_abs - u_s;
 
-% Bounds on stacked U_dev = [u_dev(k); ...; u_dev(k+N-1)]
-lb = repmat(lb_u_dev, N, 1);    % (N*nu x 1)
-ub = repmat(ub_u_dev, N, 1);    % (N*nu x 1)
+% move constraints Δu_min <= Δu <= Δu_max
+du_max_abs = [300;300];
+du_min_abs = -du_max_abs;
+
+du_max_dev = du_max_abs;
+du_min_dev = du_min_abs;
+
+u_min_stack  = kron(ones(N,1),u_min_dev);
+u_max_stack  = kron(ones(N,1),u_max_dev);
+
+du_min_stack = kron(ones(N,1),du_min_dev);
+du_max_stack = kron(ones(N,1),du_max_dev);
 
 %% ========================================================================
-% 7) Simulation settings (time, experiments)
+% 5) Soft OUTPUT constraints (absolute → deviation)
 % ========================================================================
 
-Tsim = 300;                         % number of MPC steps
-t    = (0:Tsim-1)*Ts;
+% Soft bounds on absolute heights (tune as you like)
+z_min_abs = [0;   0  ];     % lower soft bounds [cm]
+z_max_abs = [150; 150];     % upper soft bounds [cm] ~ tank capacity
 
-rng(0);                             % reproducibility for measurement noise
+% Convert to deviation coordinates: z_dev = z_abs - zs
+z_min_dev = z_min_abs - zs;
+z_max_dev = z_max_abs - zs;
+
+Z_min_stack = kron(ones(N,1), z_min_dev);   %#ok<NASGU> (not used explicitly)
+Z_max_stack = kron(ones(N,1), z_max_dev);
 
 %% ========================================================================
-% 8) EXPERIMENT A: Reference steps, disturbances = 0
+% 6) Simulation setup (reference + disturbance step)
 % ========================================================================
 
-disp('=== PROBLEM 10 – EXPERIMENT A: Reference steps, d_dev = 0 ===');
+Tsim = 300;
+t = (0:Tsim-1) * Ts;
 
+% Reference staircases (same style as you had)
 t_change_h1 = [0 600 1600];
 values_h1   = [zs(1) zs(1)*1.3 zs(1)*0.8];
 
-t_change_h2 = [0 600 1600];
+t_change_h2 = [0 600 1300];
 values_h2   = [zs(2) zs(2)*1.3 zs(2)*1.0];
 
-[h1_ref_A, h2_ref_A] = generate_stair_references( ...
-    t, t_change_h1, values_h1, ...
-       t_change_h2, values_h2);
+[h1_ref, h2_ref] = generate_stair_references( ...
+                        t, t_change_h1, values_h1, ...
+                           t_change_h2, values_h2);
 
-z_ref_abs_A = [h1_ref_A; h2_ref_A];
-z_ref_dev_A = z_ref_abs_A - zs;     % deviation reference
+z_ref_abs = [h1_ref; h2_ref];    % absolute refs
+z_ref     = z_ref_abs - zs;      % deviation refs
 
-% Disturbances dev in Experiment A: zero
-d_dev_A = zeros(nd,Tsim);
-
-% --- A1: Linear plant (reuse linear model internally) ---
-simA_lin = simulateOffsetFreeMPC_constrained_linear( ...
-           A,B,E,C, ...
-           A_e,B_e,C_e, ...
-           K_e, ...
-           H,Phi,Gamma,Qbar, ...
-           u_s,zs, ...
-           z_ref_dev_A, ...
-           d_dev_A, ...
-           R_meas, ...
-           lb,ub, ...
-           Tsim,Ts);
-
-% --- A2: Nonlinear plant (FourTankSystemModified + Sensor) ---
-simA_nl = simulateOffsetFreeMPC_constrained_nonlinear( ...
-           A,B,E,C, ...
-           A_e,B_e,C_e, ...
-           K_e, ...
-           H,Phi,Gamma,Qbar, ...
-           u_s,zs, ...
-           z_ref_dev_A, ...
-           d_dev_A, ...
-           R_meas, ...
-           lb,ub, ...
-           Tsim,Ts, ...
-           p,d_s,xs,output_index);
-
-%% ========================================================================
-% 9) EXPERIMENT B: SAME reference steps as A, PLUS disturbance step later
-% ========================================================================
-
-disp('=== PROBLEM 10 – EXPERIMENT B: Reference steps + disturbance step ===');
-
-% Same reference steps as in A
-z_ref_abs_B = z_ref_abs_A;
-z_ref_dev_B = z_ref_dev_A;
-
-% Disturbance step (later)
-d_dev_B = zeros(nd,Tsim);
-k_step = round(2000/Ts);   % when to inject disturbance step
-
-d_step_val = [30; -20];    % [ΔF3; ΔF4]
+% Disturbance scenario (deviation from d_s):
+%   0 until t ≈ 2000 s, then step in F3
+d_dev = zeros(nd,Tsim);
+k_step = round(2000 / Ts);
 if k_step < 1, k_step = 1; end
-d_dev_B(:,k_step:end) = repmat(d_step_val,1,Tsim-k_step+1);
-
-% --- B1: Linear plant ---
-simB_lin = simulateOffsetFreeMPC_constrained_linear( ...
-           A,B,E,C, ...
-           A_e,B_e,C_e, ...
-           K_e, ...
-           H,Phi,Gamma,Qbar, ...
-           u_s,zs, ...
-           z_ref_dev_B, ...
-           d_dev_B, ...
-           R_meas, ...
-           lb,ub, ...
-           Tsim,Ts);
-
-% --- B2: Nonlinear plant ---
-simB_nl = simulateOffsetFreeMPC_constrained_nonlinear( ...
-           A,B,E,C, ...
-           A_e,B_e,C_e, ...
-           K_e, ...
-           H,Phi,Gamma,Qbar, ...
-           u_s,zs, ...
-           z_ref_dev_B, ...
-           d_dev_B, ...
-           R_meas, ...
-           lb,ub, ...
-           Tsim,Ts, ...
-           p,d_s,xs,output_index);
+d_step_val = [50; -20];   % [ΔF3; ΔF4] in cm^3/s, quite visible
+d_dev(:,k_step:end) = repmat(d_step_val,1,Tsim-k_step+1);
 
 %% ========================================================================
-% 10) PLOTS – Linear vs Nonlinear (Problem 10)
+% 7) Closed-loop simulation (OFFSET-FREE MPC + static augmented KF)
 % ========================================================================
 
-% ---------- Experiment A ----------
-figure('Name','P10_ExpA_outputs');
-sgtitle('Problem 10 – Exp A: Reference steps, linear vs nonlinear plant');
-
-subplot(3,1,1); hold on; grid on;
-plot(t, z_ref_abs_A(1,:),      'k--','LineWidth',1.2, 'DisplayName','h_1 ref');
-plot(t, simA_lin.y_abs(1,:),   'b',  'LineWidth',1.4, 'DisplayName','h_1 linear');
-plot(t, simA_nl.y_abs(1,:),    'r',  'LineWidth',1.4, 'DisplayName','h_1 nonlinear');
-ylabel('h_1 [cm]');
-legend('Location','best');
-
-subplot(3,1,2); hold on; grid on;
-plot(t, z_ref_abs_A(2,:),      'k--','LineWidth',1.2, 'DisplayName','h_2 ref');
-plot(t, simA_lin.y_abs(2,:),   'b',  'LineWidth',1.4, 'DisplayName','h_2 linear');
-plot(t, simA_nl.y_abs(2,:),    'r',  'LineWidth',1.4, 'DisplayName','h_2 nonlinear');
-ylabel('h_2 [cm]');
-legend('Location','best');
-
-subplot(3,1,3); hold on; grid on;
-plot(t, simA_lin.u(1,:), 'b','LineWidth',1.4,'DisplayName','u_1 linear');
-plot(t, simA_lin.u(2,:), 'b:','LineWidth',1.2,'DisplayName','u_2 linear');
-plot(t, simA_nl.u(1,:),  'r','LineWidth',1.4,'DisplayName','u_1 nonlinear');
-plot(t, simA_nl.u(2,:),  'r:','LineWidth',1.2,'DisplayName','u_2 nonlinear');
-yline(u_s(1),'k--','LineWidth',1.0);
-yline(u_s(2),'k--','LineWidth',1.0);
-yline(0,'k:');
-yline(600,'k:');
-ylabel('u [cm^3/s]'); xlabel('Time [s]');
-legend('Location','best');
-
-% Disturbance estimates in A (should be ~0)
-figure('Name','P10_ExpA_disturbances');
-sgtitle('Problem 10 – Exp A: Disturbance estimates (linear vs nonlinear)');
-
-subplot(2,1,1); hold on; grid on;
-plot(t, simA_lin.d_hat(1,:), 'b','LineWidth',1.4,'DisplayName','\hat d_1 linear');
-plot(t, simA_nl.d_hat(1,:),  'r','LineWidth',1.4,'DisplayName','\hat d_1 nonlinear');
-ylabel('\hat d_1 = \Delta F_3 [cm^3/s]');
-legend('Location','best');
-
-subplot(2,1,2); hold on; grid on;
-plot(t, simA_lin.d_hat(2,:), 'b','LineWidth',1.4,'DisplayName','\hat d_2 linear');
-plot(t, simA_nl.d_hat(2,:),  'r','LineWidth',1.4,'DisplayName','\hat d_2 nonlinear');
-ylabel('\hat d_2 = \Delta F_4 [cm^3/s]');
-xlabel('Time [s]');
-legend('Location','best');
-
-% ---------- Experiment B ----------
-figure('Name','P10_ExpB_outputs');
-sgtitle('Problem 10 – Exp B: Disturbance step, linear vs nonlinear plant');
-
-subplot(3,1,1); hold on; grid on;
-plot(t, z_ref_abs_B(1,:),      'k--','LineWidth',1.2,'DisplayName','h_1 ref');
-plot(t, simB_lin.y_abs(1,:),   'b',  'LineWidth',1.4,'DisplayName','h_1 linear');
-plot(t, simB_nl.y_abs(1,:),    'r',  'LineWidth',1.4,'DisplayName','h_1 nonlinear');
-xline(t(k_step),'m--','Step in d','LabelVerticalAlignment','bottom');
-ylabel('h_1 [cm]');
-legend('Location','best');
-
-subplot(3,1,2); hold on; grid on;
-plot(t, z_ref_abs_B(2,:),      'k--','LineWidth',1.2,'DisplayName','h_2 ref');
-plot(t, simB_lin.y_abs(2,:),   'b',  'LineWidth',1.4,'DisplayName','h_2 linear');
-plot(t, simB_nl.y_abs(2,:),    'r',  'LineWidth',1.4,'DisplayName','h_2 nonlinear');
-xline(t(k_step),'m--','Step in d','LabelVerticalAlignment','bottom');
-ylabel('h_2 [cm]');
-legend('Location','best');
-
-subplot(3,1,3); hold on; grid on;
-plot(t, simB_lin.u(1,:), 'b','LineWidth',1.4,'DisplayName','u_1 linear');
-plot(t, simB_lin.u(2,:), 'b:','LineWidth',1.2,'DisplayName','u_2 linear');
-plot(t, simB_nl.u(1,:),  'r','LineWidth',1.4,'DisplayName','u_1 nonlinear');
-plot(t, simB_nl.u(2,:),  'r:','LineWidth',1.2,'DisplayName','u_2 nonlinear');
-xline(t(k_step),'m--','Step in d');
-yline(u_s(1),'k--','LineWidth',1.0);
-yline(u_s(2),'k--','LineWidth',1.0);
-yline(0,'k:');
-yline(600,'k:');
-ylabel('u [cm^3/s]'); xlabel('Time [s]');
-legend('Location','best');
-
-% Disturbances true vs estimated (Experiment B)
-figure('Name','P10_ExpB_disturbances');
-sgtitle('Problem 10 – Exp B: True vs estimated disturbances');
-
-subplot(2,1,1); hold on; grid on;
-plot(t, d_dev_B(1,:),        'k--','LineWidth',1.4,'DisplayName','True \DeltaF_3');
-plot(t, simB_lin.d_hat(1,:), 'b',  'LineWidth',1.4,'DisplayName','\hat{\DeltaF}_3 linear');
-plot(t, simB_nl.d_hat(1,:),  'r',  'LineWidth',1.4,'DisplayName','\hat{\DeltaF}_3 nonlinear');
-xline(t(k_step),'m--','Step');
-ylabel('\DeltaF_3 [cm^3/s]');
-legend('Location','best');
-
-subplot(2,1,2); hold on; grid on;
-plot(t, d_dev_B(2,:),        'k--','LineWidth',1.4,'DisplayName','True \DeltaF_4');
-plot(t, simB_lin.d_hat(2,:), 'b',  'LineWidth',1.4,'DisplayName','\hat{\DeltaF}_4 linear');
-plot(t, simB_nl.d_hat(2,:),  'r',  'LineWidth',1.4,'DisplayName','\hat{\DeltaF}_4 nonlinear');
-xline(t(k_step),'m--','Step');
-ylabel('\DeltaF_4 [cm^3/s]'); xlabel('Time [s]');
-legend('Location','best');
+sim = simulateMPC_Problem10_offsetfree( ...
+    A,B,E,C, ...
+    A_e,B_e,C_e, ...
+    K_e, ...
+    Phi_z_x,Phi_z_u, ...
+    Wz_big,Wu_big,Wdu_big, ...
+    E_du, ...
+    u_s, ...
+    u_min_stack,u_max_stack, ...
+    du_min_stack,du_max_stack, ...
+    Z_max_stack, ...
+    z_ref_abs,z_ref, ...
+    z_min_abs,z_max_abs, ...
+    zs, ...
+    d_dev, ...
+    Tsim,Ts,R_meas);
 
 %% ========================================================================
-% ===================== HELPER FUNCTIONS ==================================
+% 8) Plots – outputs, inputs, constraints, disturbances
 % ========================================================================
 
+plotResultsProblem10_offsetfree(t,sim, ...
+    z_ref_abs,z_ref, ...
+    u_min_abs,u_max_abs, ...
+    du_min_abs,du_max_abs, ...
+    z_min_abs,z_max_abs, ...
+    k_step, d_step_val);
+
+%% ========================================================================
+% ======================== LOCAL FUNCTIONS ================================
+% ========================================================================
+
+function K = computeKF(A,C,Q,R)
+% Stationary (steady-state) Kalman filter gain from DARE
+    [P,~,~] = dare(A',C',Q,R);
+    P = 0.5*(P+P');               % enforce symmetry
+    Re = C*P*C' + R;
+    K  = P*C'/Re;
+end
+
+% -------------------------------------------------------------------------
 function [Phi_x, Gamma_x] = buildPredictionMatrices(A,B,N)
 %BUILD PREDICTION MATRICES FOR:
 %   x_{k+1} = A x_k + B u_k
@@ -449,230 +336,317 @@ function [Phi_x, Gamma_x] = buildPredictionMatrices(A,B,N)
 end
 
 % -------------------------------------------------------------------------
-function sim = simulateOffsetFreeMPC_constrained_linear( ...
-            A,B,E,C, ...
-            A_e,B_e,C_e, ...
-            K_e, ...
-            H,Phi,Gamma,Qbar, ...
-            u_s,zs, ...
-            z_ref_dev, ...
-            d_dev, ...
-            R_meas, ...
-            lb,ub, ...
-            Tsim,Ts)
-% Closed-loop constrained MPC + static augmented KF, LINEAR plant.
+function sim = simulateMPC_Problem10_offsetfree( ...
+    A,B,E,C, ...
+    A_e,B_e,C_e, ...
+    K_e, ...
+    Phi_z_x,Phi_z_u, ...
+    Wz_big,Wu_big,Wdu_big, ...
+    E_du, ...
+    u_s, ...
+    u_min_stack,u_max_stack, ...
+    du_min_stack,du_max_stack, ...
+    Z_max_stack, ...
+    z_ref_abs,z_ref, ...
+    z_min_abs,z_max_abs, ...
+    zs, ...
+    d_dev, ...
+    Tsim,Ts,R_meas)
 
     [nx,nu] = size(B);
-    nd      = size(E,2);
-    ny      = size(C,1);
+    nd = size(E,2);
+    ny = size(C,1);
+    nx_e = nx + nd;
 
-    nx_e    = nx + nd;
-    N       = size(Phi,1)/ny;
+    N  = size(Phi_z_u,1) / ny;   % prediction horizon
+    nU = N*nu;
+    nZ = N*ny;
+    nEta = nZ;                   % one slack per predicted output
 
-    % Allocate
-    x_dev   = zeros(nx, Tsim+1);    % true state deviation (linear)
-    y_true  = zeros(ny, Tsim);      % true output dev
-    y_abs   = zeros(ny, Tsim);      % absolute heights
-    y_meas  = zeros(ny, Tsim);      % measured dev
+    % Slack penalty (softness) – big = stricter
+    w_eta = 1e3;
+    Weta_big = w_eta * eye(nEta);
 
-    x_hat_e = zeros(nx_e, Tsim+1);  % KF augmented state [x; d]
-    u_dev   = zeros(nu, Tsim);      % control dev
-    u_abs   = zeros(nu, Tsim);      % absolute inputs
+    % Precompute constant Hessian part for U
+    H_z  = Phi_z_u' * Wz_big  * Phi_z_u;
+    H_u  = Wu_big;
+    H_du = E_du'   * Wdu_big * E_du;
+    H_UU = H_z + H_u + H_du;
 
-    d_hat   = zeros(nd, Tsim);      % estimated disturbance dev
+    % Box bounds for η (slack)
+    eta_max = 50;                    % [cm] extra allowed above z_max_dev
+    eta_min_vec = zeros(nEta,1);
+    eta_max_vec = eta_max * ones(nEta,1);
 
-    % Initial conditions
-    x_dev(:,1)   = zeros(nx,1);     % start at steady state
-    x_hat_e(:,1) = zeros(nx_e,1);   % initial KF estimate [0;0]
+    % Plant noise (linear)
+    Qplant = 1e-4 * eye(nx);
+    sigma_meas = sqrt(diag(R_meas));
 
-    sigma_y = sqrt(diag(R_meas));   % measurement noise std dev
+    % Deviation bounds for outputs
+    z_min_dev = z_min_abs - zs;
+    z_max_dev = z_max_abs - zs;
+    Z_max_stack_dev = Z_max_stack; %#ok<NASGU> (name clarity)
 
-    % QP static parts
-    l = lb;
-    u = ub;
-    Aqp = [];       % no linear constraints, only bounds
-    bl  = [];
-    bu  = [];
+    % Initialise
+    x_true = zeros(nx,1);            % deviation state
+    d_true = zeros(nd,1);            % deviation disturbance
+    x_hat_e = zeros(nx_e,1);         % augmented estimate [x_hat; d_hat]
+    u_prev = zeros(nu,1);
 
-    % Closed-loop simulation
+    % Logs
+    z_dev = zeros(ny,Tsim);
+    z_abs = zeros(ny,Tsim);
+    u_dev = zeros(nu,Tsim);
+    u_abs = zeros(nu,Tsim);
+    d_hat = zeros(nd,Tsim);
+    eps0  = zeros(ny,Tsim);          % first-step slack
+
+    nu_total = nU + nEta;
+
     for k = 1:Tsim
 
-        % --- True LINEAR plant update (for k>1) ---
+        % Disturbance for this step (deviation)
+        d_true = d_dev(:,k);
+
+        % ----- True plant update -----
         if k > 1
-            x_dev(:,k) = A*x_dev(:,k-1) + B*u_dev(:,k-1) + E*d_dev(:,k-1);
+            w = mvnrnd(zeros(nx,1),Qplant)';
+            x_true = A*x_true + B*u_prev + E*d_dev(:,k-1) + w;
         end
-        y_true(:,k) = C*x_dev(:,k);
-        y_abs(:,k)  = zs + y_true(:,k);
 
-        % Measurement with noise
-        noise_k = sigma_y .* randn(ny,1);
-        y_meas(:,k) = y_true(:,k) + noise_k;
+        z_dev(:,k) = C*x_true;
+        z_abs(:,k) = zs + z_dev(:,k);
 
-        % --- Static augmented Kalman filter ---
-        innov        = y_meas(:,k) - C_e*x_hat_e(:,k);
-        x_hat_e(:,k) = x_hat_e(:,k) + K_e*innov;
+        % Measurement with noise (deviation)
+        v = sigma_meas .* randn(ny,1);
+        y_meas = z_dev(:,k) + v;
+
+        % ----- Static augmented Kalman filter (offset-free) -----
+        % Augmented measurement model: y = C_e x_e, with C_e = [C  0]
+        y_pred = C_e*x_hat_e;
+        innov  = y_meas - y_pred;
+        x_hat_e = x_hat_e + K_e*innov;
 
         % Store estimated disturbances
-        d_hat_k = x_hat_e(nx+1:end,k);
-        d_hat(:,k) = d_hat_k;
+        d_hat(:,k) = x_hat_e(nx+1:end);
 
-        % --- MPC: build stacked reference over horizon ---
-        zref_stack = zeros(ny*N,1);
-        for j = 0:N-1
-            idx = min(k+j, Tsim);
-            zref_stack(j*ny+(1:ny)) = z_ref_dev(:,idx);
+        % ----- Build horizon references (deviation) -----
+        if k+N-1 <= Tsim
+            zbar = z_ref(:,k:k+N-1);
+            ubar = zeros(nu,N);          % nominal input deviations = 0
+        else
+            last = Tsim-k+1;
+            zbar = [z_ref(:,k:end), repmat(z_ref(:,end),1,N-last)];
+            ubar = zeros(nu,N);
         end
 
-        % Quadratic cost f vector (for 0.5*U'HU + f'U)
-        f = 2*Gamma'*Qbar*(Phi*x_hat_e(:,k) - zref_stack);
+        Zbar = zbar(:);
+        Ubar = ubar(:);
 
-        % Initial guess
-        xinit = zeros(N*nu,1);
+        % ----- Cost gradient for U -----
+        y0 = Phi_z_x*x_hat_e;          % predicted output dev offset term
 
-        % Solve QP with bounds only
-        [U_seq, info] = problem_7(H, f, l, u, Aqp, bl, bu, xinit); %#ok<NASGU>
+        f_z  = Phi_z_u' * Wz_big  * (y0 - Zbar);
+        f_u  = -Wu_big * Ubar;
 
-        % First control move
-        u_dev(:,k) = U_seq(1:nu);
-        u_abs(:,k) = u_s + u_dev(:,k);
+        Ed_prev = [u_prev; zeros((N-1)*nu,1)];
+        f_du = -E_du' * Wdu_big * Ed_prev;
 
-        % KF time update
-        if k < Tsim
-            x_hat_e(:,k+1) = A_e*x_hat_e(:,k) + B_e*u_dev(:,k);
-        end
+        g_U = f_z + f_u + f_du;
+
+        % Full decision vector w = [U; eta]
+        H = blkdiag(H_UU, Weta_big);
+        f = [g_U; zeros(nEta,1)];
+
+        % ----- Box constraints: U and eta -----
+        l = [u_min_stack; eta_min_vec];
+        u = [u_max_stack; eta_max_vec];
+
+        % ----- Move constraints: ΔUmin <= E_du U - Ed_prev <= ΔUmax -----
+        A1  = [E_du, zeros(N*nu,nEta)];
+        bl1 = du_min_stack + Ed_prev;
+        bu1 = du_max_stack + Ed_prev;
+
+        % ----- Soft output upper bounds: z_pred_dev <= z_max_dev + eta -----
+        % z_pred_dev = y0 + Phi_z_u U
+        %   y0 + Phi_z_u U <= Z_max_stack + eta
+        % => Phi_z_u U - I*eta <= Z_max_stack - y0
+        Zmax_stack = Z_max_stack;          % (N*ny x 1) dev-bounds-stack
+        b_soft = Zmax_stack - y0;
+
+        bigM = 1e6;
+        A2  = [Phi_z_u, -eye(nZ)];
+        bl2 = -bigM * ones(nZ,1);         % effectively one-sided
+        bu2 = b_soft;
+
+        % Stack inequalities
+        Aqp   = [A1; A2];
+        bl_ineq = [bl1; bl2];
+        bu_ineq = [bu1; bu2];
+
+        % ----- Solve QP with problem_7 -----
+        xinit = zeros(nu_total,1);
+        [w_opt,~] = problem_7(H,f,l,u,Aqp,bl_ineq,bu_ineq,xinit);
+
+        Uopt   = w_opt(1:nU);
+        etaopt = w_opt(nU+1:end);         %#ok<NASGU> (full seq, only first shown)
+
+        u_k = Uopt(1:nu);
+
+        u_dev(:,k) = u_k;
+        u_abs(:,k) = u_s + u_k;
+
+        % First-step slack for each output (for plotting)
+        eps0(:,k) = etaopt(1:ny);
+
+        % Time update of KF
+        x_hat_e = A_e*x_hat_e + B_e*u_k;
+
+        u_prev = u_k;
     end
 
-    % Output struct
-    sim = struct();
-    sim.x_dev  = x_dev;
-    sim.y_dev  = y_true;
-    sim.y_abs  = y_abs;
-    sim.y_meas = y_meas;
-    sim.u_dev  = u_dev;
-    sim.u      = u_abs;
+    % Pack results
+    sim.z_dev = z_dev;
+    sim.z_abs = z_abs;
+    sim.u_dev = u_dev;
+    sim.u_abs = u_abs;
+    sim.d_hat = d_hat;
     sim.d_true = d_dev;
-    sim.d_hat  = x_hat_e(nx+1:end,1:Tsim);
+    sim.eps = eps0;
 end
 
 % -------------------------------------------------------------------------
-function sim = simulateOffsetFreeMPC_constrained_nonlinear( ...
-            A,B,E,C, ...
-            A_e,B_e,C_e, ...
-            K_e, ...
-            H,Phi,Gamma,Qbar, ...
-            u_s,zs, ...
-            z_ref_dev, ...
-            d_dev, ...
-            R_meas, ...
-            lb,ub, ...
-            Tsim,Ts, ...
-            p,d_s,xs,output_index)
-% Closed-loop constrained MPC + static augmented KF, NONLINEAR plant:
-%   x_dot = FourTankSystemModified(t, x, u_abs, d_abs, p)
-%   y     = FourTankSystemSensor(x,p);  (heights)
-% with measurement noise and same linear-KF + linear-model-based MPC.
+function plotResultsProblem10_offsetfree(t,sim, ...
+    z_ref_abs,z_ref, ...
+    u_min_abs,u_max_abs, ...
+    du_min_abs,du_max_abs, ...
+    z_min_abs,z_max_abs, ...
+    k_step, d_step_val)
 
-    [nx,nu] = size(B);
-    nd      = size(E,2);
-    ny      = numel(output_index);  % measured outputs (1 and 2)
+    z_abs = sim.z_abs;
+    z_dev = sim.z_dev;
+    u_abs = sim.u_abs;
+    u_dev = sim.u_dev;
+    d_hat = sim.d_hat;
+    d_true = sim.d_true;
+    eps0  = sim.eps;
 
-    nx_e    = nx + nd;
-    N       = size(Phi,1)/ny;
+    %% Absolute outputs with soft bounds
+    figure('Name','P10 – Absolute Outputs (Offset-free, Soft Constraints)');
+    subplot(2,1,1); hold on; grid on;
+    plot(t, z_abs(1,:), 'b','LineWidth',1.5);
+    plot(t, z_ref_abs(1,:), 'k--','LineWidth',1.2);
+    yline(z_min_abs(1),'g:','LineWidth',1.2);
+    yline(z_max_abs(1),'g:','LineWidth',1.2);
+    xline(t(k_step),'r--','d-step','LabelVerticalAlignment','bottom');
+    ylabel('h_1 [cm]');
+    legend('h_1','h_{1,ref}','h_{1,min}^{soft}','h_{1,max}^{soft}','Location','best');
+    title('Tank 1 – Absolute Height with Soft Bounds');
 
-    % Allocate
-    x_nl    = zeros(nx, Tsim+1);    % true nonlinear masses
-    y_true  = zeros(ny, Tsim);      % true output dev (heights)
-    y_abs   = zeros(ny, Tsim);      % absolute heights
-    y_meas  = zeros(ny, Tsim);      % measured dev
+    subplot(2,1,2); hold on; grid on;
+    plot(t, z_abs(2,:), 'b','LineWidth',1.5);
+    plot(t, z_ref_abs(2,:), 'k--','LineWidth',1.2);
+    yline(z_min_abs(2),'g:','LineWidth',1.2);
+    yline(z_max_abs(2),'g:','LineWidth',1.2);
+    xline(t(k_step),'r--','d-step','LabelVerticalAlignment','bottom');
+    ylabel('h_2 [cm]'); xlabel('Time [s]');
+    legend('h_2','h_{2,ref}','h_{2,min}^{soft}','h_{2,max}^{soft}','Location','best');
+    title('Tank 2 – Absolute Height with Soft Bounds');
 
-    x_hat_e = zeros(nx_e, Tsim+1);  % KF augmented state [x; d] (linear model)
-    u_dev   = zeros(nu, Tsim);      % control dev
-    u_abs   = zeros(nu, Tsim);      % absolute inputs
+    %% Deviation outputs
+    figure('Name','P10 – Deviation Outputs (Offset-free)');
+    subplot(2,1,1); hold on; grid on;
+    plot(t, z_dev(1,:), 'b','LineWidth',1.5);
+    plot(t, z_ref(1,:), 'k--','LineWidth',1.2);
+    xline(t(k_step),'r--','d-step');
+    ylabel('z_1 dev [cm]');
+    legend('z_1','z_{1,ref}','Location','best');
+    title('Output 1 (deviation)');
 
-    d_hat   = zeros(nd, Tsim);      % estimated disturbance dev
+    subplot(2,1,2); hold on; grid on;
+    plot(t, z_dev(2,:), 'b','LineWidth',1.5);
+    plot(t, z_ref(2,:), 'k--','LineWidth',1.2);
+    xline(t(k_step),'r--','d-step');
+    ylabel('z_2 dev [cm]'); xlabel('Time [s]');
+    legend('z_2','z_{2,ref}','Location','best');
+    title('Output 2 (deviation)');
 
-    % Initial conditions: start at steady state xs
-    x_nl(:,1)   = xs;
-    x_hat_e(:,1) = zeros(nx_e,1);   % linear KF believes we start at dev 0
+    %% Absolute inputs + hard bounds
+    figure('Name','P10 – Absolute Inputs (Offset-free)');
+    hold on; grid on;
+    plot(t, u_abs(1,:), 'r','LineWidth',1.5);
+    plot(t, u_abs(2,:), 'm--','LineWidth',1.5);
 
-    sigma_y = sqrt(diag(R_meas));   % measurement noise std dev (applied to h1,h2)
+    yline(u_min_abs(1),'b--','LineWidth',1.2);
+    yline(u_max_abs(1),'b--','LineWidth',1.2);
+    yline(u_min_abs(2),'g--','LineWidth',1.2);
+    yline(u_max_abs(2),'g--','LineWidth',1.2);
+    xline(t(k_step),'r--','d-step');
 
-    % QP static parts
-    l = lb;
-    u = ub;
-    Aqp = [];       % no linear constraints, only bounds
-    bl  = [];
-    bu  = [];
+    xlabel('Time [s]');
+    ylabel('Flow [cm^3/s]');
+    legend('u_1','u_2', ...
+           'u_{1,min}','u_{1,max}', ...
+           'u_{2,min}','u_{2,max}','Location','best');
+    title('Absolute Pump Flows with Input Constraints');
 
-    % Closed-loop simulation
-    for k = 1:Tsim
+    %% Deviation inputs
+    figure('Name','P10 – Deviation Inputs (Offset-free)');
+    hold on; grid on;
+    stairs(t, u_dev(1,:), 'r','LineWidth',1.5);
+    stairs(t, u_dev(2,:), 'm--','LineWidth',1.5);
+    xline(t(k_step),'r--','d-step');
+    xlabel('Time [s]');
+    ylabel('\Delta u [cm^3/s]');
+    legend('\Delta u_1','\Delta u_2','Location','best');
+    title('Deviation Inputs');
 
-        % --- Nonlinear plant output ---
-        h_all = FourTankSystemSensor(x_nl(:,k), p);  % all 4 heights
-        y_abs_k = h_all(output_index);               % measured tanks 1 & 2
-        y_true(:,k) = y_abs_k - zs;                  % deviation
-        y_abs(:,k)  = y_abs_k;
+    %% Input moves + move constraints
+    du1 = [u_dev(1,1), diff(u_dev(1,:))];
+    du2 = [u_dev(2,1), diff(u_dev(2,:))];
 
-        % Measurement with noise
-        noise_k = sigma_y .* randn(ny,1);
-        y_meas(:,k) = y_true(:,k) + noise_k;
+    figure('Name','P10 – Input Moves (Offset-free)');
+    hold on; grid on;
+    stairs(t, du1, 'r','LineWidth',1.5);
+    stairs(t, du2, 'm--','LineWidth',1.5);
 
-        % --- Static augmented Kalman filter (linear model) ---
-        innov        = y_meas(:,k) - C_e*x_hat_e(:,k);
-        x_hat_e(:,k) = x_hat_e(:,k) + K_e*innov;
+    yline(du_max_abs(1),'b--');
+    yline(du_min_abs(1),'b--');
+    yline(du_max_abs(2),'g--');
+    yline(du_min_abs(2),'g--');
+    xline(t(k_step),'r--','d-step');
 
-        % Store estimated disturbances
-        d_hat_k = x_hat_e(nx+1:end,k);
-        d_hat(:,k) = d_hat_k;
+    xlabel('Time [s]');
+    ylabel('\Delta u [cm^3/s]');
+    legend('\Delta u_1','\Delta u_2', ...
+           '\Delta u_{1,max}','\Delta u_{1,min}', ...
+           '\Delta u_{2,max}','\Delta u_{2,min}','Location','best');
+    title('Input Moves and Move Constraints');
 
-        % --- MPC: build stacked reference over horizon ---
-        zref_stack = zeros(ny*N,1);
-        for j = 0:N-1
-            idx = min(k+j, Tsim);
-            zref_stack(j*ny+(1:ny)) = z_ref_dev(:,idx);
-        end
+    %% Disturbances true vs estimated (offset-free behaviour)
+    figure('Name','P10 – Disturbances (Offset-free)');
+    subplot(2,1,1); hold on; grid on;
+    plot(t, d_true(1,:), 'k--','LineWidth',1.4,'DisplayName','True \DeltaF_3');
+    plot(t, d_hat(1,:),  'b',  'LineWidth',1.5,'DisplayName','\hat{\DeltaF}_3');
+    xline(t(k_step),'r--','d-step');
+    ylabel('\DeltaF_3 [cm^3/s]');
+    legend('Location','best');
+    title(sprintf('F_3 disturbance step = %.1f cm^3/s', d_step_val(1)));
 
-        % Quadratic cost f vector (for 0.5*U'HU + f'U)
-        f = 2*Gamma'*Qbar*(Phi*x_hat_e(:,k) - zref_stack);
-
-        % Initial guess
-        xinit = zeros(N*nu,1);
-
-        % Solve QP with bounds only
-        [U_seq, info] = problem_7(H, f, l, u, Aqp, bl, bu, xinit); %#ok<NASGU>
-
-        % First control move
-        u_dev(:,k) = U_seq(1:nu);
-        u_abs(:,k) = u_s + u_dev(:,k);
-
-        % --- Nonlinear plant update (Euler integration over Ts) ---
-        d_abs_k = d_s + d_dev(:,k);    % absolute disturbances F3,F4
-        dxdt = FourTankSystemModified(0, x_nl(:,k), u_abs(:,k), d_abs_k, p);
-        x_nl(:,k+1) = x_nl(:,k) + Ts * dxdt;
-
-        % KF time update (linear model)
-        if k < Tsim
-            x_hat_e(:,k+1) = A_e*x_hat_e(:,k) + B_e*u_dev(:,k);
-        end
-    end
-
-    % Output struct
-    sim = struct();
-    sim.x_nl  = x_nl;
-    sim.y_dev = y_true;
-    sim.y_abs = y_abs;
-    sim.y_meas = y_meas;
-    sim.u_dev  = u_dev;
-    sim.u      = u_abs;
-    sim.d_true = d_dev;
-    sim.d_hat  = x_hat_e(nx+1:end,1:Tsim);
+    subplot(2,1,2); hold on; grid on;
+    plot(t, d_true(2,:), 'k--','LineWidth',1.4,'DisplayName','True \DeltaF_4');
+    plot(t, d_hat(2,:),  'b',  'LineWidth',1.5,'DisplayName','\hat{\DeltaF}_4');
+    xline(t(k_step),'r--','d-step');
+    ylabel('\DeltaF_4 [cm^3/s]'); xlabel('Time [s]');
+    legend('Location','best');
+    title('F_4 disturbance (here no step)');
 end
 
 % -------------------------------------------------------------------------
 function [h1_ref, h2_ref] = generate_stair_references( ...
                                     t, t_change_h1, values_h1, ...
                                        t_change_h2, values_h2)
-% Simple staircase generator (same structure as in Problem 8/9)
+% Simple staircase generator (same style as your previous problems)
 
     Nt = numel(t);
     h1_ref = zeros(1,Nt);
