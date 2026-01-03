@@ -96,13 +96,16 @@ C = [
 a1_lin = rho*beta1;  a2_lin = rho*beta2;  a3_lin = rho*beta3;  a4_lin = rho*beta4;
 
 % Time constants
-tau1 = 1/a1_lin;  tau2 = 1/a2_lin;  tau3 = 1/a3_lin;  tau4 = 1/a4_lin;
+tau1 = 1/a1_lin  
+tau2 = 1/a2_lin  
+tau3 = 1/a3_lin  
+tau4 = 1/a4_lin
 
 % DC gains in canonical form
-K11 = gamma1        /(A1*a1_lin);
-K12 = (1-gamma2)    /(A1*a1_lin);
-K21 = (1-gamma1)    /(A2*a2_lin);
-K22 = gamma2        /(A2*a2_lin);
+K11 = gamma1        /(A1*a1_lin)
+K12 = (1-gamma2)    /(A1*a1_lin)
+K21 = (1-gamma1)    /(A2*a2_lin)
+K22 = gamma2        /(A2*a2_lin)
 
 Kd1 = 1/(A1*a1_lin);
 Kd2 = 1/(A2*a2_lin);
@@ -297,6 +300,67 @@ fprintf('G11(s) = %.4e / (%.2fs + 1)\n', K11, tau11);
 fprintf('G12(s) = %.4e / ((%.2fs + 1)(%.2fs + 1))\n', K12, tau12(1), tau12(2));
 fprintf('G21(s) = %.4e / ((%.2fs + 1)(%.2fs + 1))\n', K21, tau21(1), tau21(2));
 fprintf('G22(s) = %.4e / (%.2fs + 1)\n', K22, tau22);
+
+
+%%
+% --- Define Laplace variable
+s = tf('s');
+
+% ===== Identified model (Problem 4) =====
+G11_id = 0.2028 / (133.64*s + 1);
+G12_id = 0.0971 / ((85.31*s + 1)*(133.61*s + 1));
+G21_id = 0.1701 / ((96.22*s + 1)*(156.75*s + 1));
+G22_id = 0.2937 / (156.06*s + 1);
+
+G_id = [G11_id G12_id; G21_id G22_id];
+
+% ===== Linearized model (Problem 5) =====
+G11_lin = 0.199 / (130.7*s + 1);
+G12_lin = 0.096 / ((85.9*s + 1)*(130.7*s + 1));
+G21_lin = 0.168 / ((96.7*s + 1)*(152.3*s + 1));
+G22_lin = 0.288 / (152.3*s + 1);
+
+G_lin = [G11_lin G12_lin; G21_lin G22_lin];
+
+% --- Time vector
+t = 0:1:1800;
+
+% --- Plot comparisons
+figure('Name','Step Response Comparison','Position',[100 100 1200 800]);
+
+titles = {'$G_{11}: h_1 \leftarrow F_1$', ...
+          '$G_{12}: h_1 \leftarrow F_2$', ...
+          '$G_{21}: h_2 \leftarrow F_1$', ...
+          '$G_{22}: h_2 \leftarrow F_2$'};
+
+for i = 1:2
+    for j = 1:2
+        subplot(2,2,(i-1)*2+j); hold on; grid on;
+
+        % Identified model
+        [y_id, t_id] = step(G_id(i,j), t);
+        plot(t_id, y_id, 'b-', 'LineWidth', 1.8);
+
+        % Linearized model
+        [y_lin, t_lin] = step(G_lin(i,j), t);
+        plot(t_lin, y_lin, 'r--', 'LineWidth', 1.8);
+
+        title(titles{(i-1)*2+j}, 'Interpreter','latex');
+        xlabel('Time [s]');
+        ylabel('Amplitude');
+        legend('Identified (tfest)', 'Linearized', 'Location','best');
+    end
+end
+
+sgtitle('Step Response Comparison: Identified vs Linearized Models', ...
+        'Interpreter','latex','FontSize',16);
+
+outputFolder = fullfile('figures','problem_5','TF_comparison');
+if ~exist(outputFolder,'dir'), mkdir(outputFolder); end
+exportgraphics(gcf, fullfile(outputFolder,'\TF_comparison.pdf'),'ContentType','vector');
+disp('✅ TF comparison figure saved.');
+
+
 
 %%
 

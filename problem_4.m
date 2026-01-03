@@ -135,6 +135,8 @@ y_norm_F1 = (y_10_F1 - hs) / du_10_F1;
 du_10_F2 = F2*1.1 - F2;
 y_norm_F2 = (y_10_F2 - hs) / du_10_F2;
 
+%%
+
 [fig_tf, ax_tf] = plot_transfer_identification(t, y_norm_F1, y_norm_F2);
 outputFolder = fullfile('figures', 'problem_4', 'normalized_tf','deterministic'); 
 if ~exist(outputFolder, 'dir'); mkdir(outputFolder); end
@@ -144,29 +146,29 @@ exportgraphics(fig_tf, fullfile(outputFolder, 'normalized_tf.pdf'), 'ContentType
 % Access the desired axes (for example, G11 in position (1,1))
 axes(ax_tf(1,1));  % or use 'nexttile' if using tiledlayout
 % Add lines and text
-xline(198, 'r--', 'LineWidth', 1.2);
-text(198, 0.5, '$T_1$', 'Interpreter','latex', ...
+xline(133.6, 'r--', 'LineWidth', 1.2);
+text(133.6, 0.5, '$T_1$', 'Interpreter','latex', ...
      'Rotation',90, 'VerticalAlignment','bottom', ...
      'HorizontalAlignment','right', 'Color','red');
 
-yline(0.632*0.301, 'r--', 'LineWidth', 1.2);
-text(1400, 0.632*0.301, '$0.632 \cdot K_{11}$', 'Interpreter','latex', ...
+yline(0.632*0.203, 'r--', 'LineWidth', 1.2);
+text(1400, 0.632*0.203, '$0.632 \cdot K_{11}$', 'Interpreter','latex', ...
      'VerticalAlignment','bottom', 'Color','red');
 
 axes(ax_tf(2,2));  % G22 plot
-xline(220, 'r--', 'LineWidth', 1.2);
-text(220, 0.5, '$T_2$', 'Interpreter','latex', ...
+xline(156, 'r--', 'LineWidth', 1.2);
+text(156, 0.5, '$T_2$', 'Interpreter','latex', ...
      'Rotation',90, 'VerticalAlignment','bottom', ...
      'HorizontalAlignment','right', 'Color','red');
-yline(0.632*0.415, 'r--', 'LineWidth', 1.2);
-text(1400, 0.632*0.415, '$0.632\cdot K_{22}$', 'Interpreter','latex', ...
+yline(0.632*0.293, 'r--', 'LineWidth', 1.2);
+text(1400, 0.632*0.293, '$0.632\cdot K_{22}$', 'Interpreter','latex', ...
      'VerticalAlignment','bottom', 'Color','red');
 exportgraphics(fig_tf, fullfile(outputFolder, 'normalized_tf_with_identification.pdf'), 'ContentType', 'vector');
 
 
+%%
 
-
-%% Normalized step responses for determinitic model with 10% step
+%% dfor determinitic model with 10% step
 % y_10_F1, y_25_F1, y_50_F1  → 4×N matrices
 % hs → steady-state heights [4x1]
 % F1, F2, u_s already defined
@@ -207,11 +209,13 @@ y_norm_F1 = (y_10_F1 - hs) / du_10_F1;
 du_10_F2 = F2*1.1 - F2;
 y_norm_F2 = (y_10_F2 - hs) / du_10_F2;
 
+%%
+
 [fig_tf, ax_tf] = plot_transfer_identification(t, y_norm_F1, y_norm_F2);
 outputFolder = fullfile('figures', 'problem_4', 'normalized_tf','sde'); 
 if ~exist(outputFolder, 'dir'); mkdir(outputFolder); end
 exportgraphics(fig_tf, fullfile(outputFolder, 'normalized_tf.pdf'), 'ContentType', 'vector');
-
+%%
 
 %% 4.3 Identifying transfer function parameters
 disp('=== IDENTIFYING TRANSFER FUNCTIONS WITH TFEST ===');
