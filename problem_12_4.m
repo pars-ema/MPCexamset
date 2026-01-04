@@ -144,6 +144,9 @@ simB = simulateNMPC_nonlinear_offsetfree( ...
 % ========================================================================
 
 % ---------- Experiment A ----------
+fig = figure;
+t = tiledlayout(fig,2,1,'TileSpacing','compact','Padding','compact');
+
 figure('Name','NMPC_ExpA_outputs');
 sgtitle('NMPC (offset-free) – Experiment A – Reference steps, d = 0');
 
@@ -171,8 +174,9 @@ yline(600,'k:');
 ylabel('u [cm^3/s]'); xlabel('Time [s]');
 legend('Location','best');
 % save in figures folder
-saveas(gcf, 'NMPC_ExpA_outputs.pdf');
+exportgraphics(t, 'NMPC_ExpA_outputs.pdf', 'ContentType','vector');
 
+t = tiledlayout(fig,3,1,'TileSpacing','compact','Padding','compact');
 figure('Name','NMPC_ExpA_dhat');
 sgtitle('NMPC (offset-free) – Experiment A – Estimated disturbances');
 subplot(2,1,1); hold on; grid on;
@@ -211,6 +215,8 @@ xline(t(k_step),'r--','Step in d');
 yline(0,'k:'); yline(600,'k:');
 ylabel('u [cm^3/s]'); xlabel('Time [s]');
 legend('Location','best');
+% save in figures folder
+saveas(gcf, 'NMPC_ExpB_outputs.png');
 
 figure('Name','NMPC_ExpB_dhat');
 sgtitle('NMPC (offset-free) – Experiment B – True vs estimated disturbances');
@@ -228,6 +234,7 @@ plot(t, simB.d_hat(2,:),       'b',  'LineWidth',1.4,'DisplayName','\hat F_4');
 xline(t(k_step),'r--','Step');
 ylabel('F_4 [cm^3/s]'); xlabel('Time [s]');
 legend('Location','best');
+saveas(gcf, 'P12_4_ExpB_dhat.png');
 
 %% ========================================================================
 % ============================= FUNCTIONS =================================
