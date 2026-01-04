@@ -171,7 +171,7 @@ end
 % 4) Hard input constraints + move constraints
 % ========================================================================
 u_min_abs = [0;0];
-u_max_abs = [450;450];
+u_max_abs = [600;600];
 
 u_min_dev = u_min_abs - u_s;
 u_max_dev = u_max_abs - u_s;
