@@ -1,22 +1,9 @@
 %% ========================================================================
 % P12 – Bound-constrained Nonlinear MPC (NMPC) for modified four-tank system
-%   OFFSET-FREE version (unknown disturbance estimated online)
-%
-%   - Nonlinear plant: FourTankSystemModified (continuous time)
-%   - ZOH inputs, discrete sampling Ts
-%   - EKF state estimation with augmented state xe = [x; d] where d=[F3;F4]
-%     is modeled as random walk (constant between samples)
-%   - NMPC solved with fmincon, box constraints 0 <= u <= 600
-%   - NMPC predictions use the CURRENT disturbance estimate d_hat_k
-%
-% Requires on path:
-%   - FourTankSystemModified.m
-%   - FourTankSystemSensor.m
 % ========================================================================
 
 clear; clc; close all;
 
-%% ---- Force "normal" (light) plot appearance even if MATLAB is dark mode
 set(groot,'defaultFigureColor','w');
 set(groot,'defaultAxesColor','w');
 set(groot,'defaultAxesXColor','k');
@@ -76,7 +63,6 @@ Rdu = 1e-2*eye(nu);          % input move penalty (delta u)
 u_min_abs = [0;0];
 u_max_abs = [600;600];
 
-% fmincon options (reduce iterations for speed)
 opt_nlp = optimoptions('fmincon', ...
     'Display','none', ...
     'Algorithm','sqp', ...
